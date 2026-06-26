@@ -5,6 +5,7 @@ const fs = require("fs");
 const path = require("path");
 
 const PORT = process.env.PORT || 4173;
+const HOST = process.env.HOST || "0.0.0.0";
 const SERVER_VERSION = 5;
 const PUBLIC_DIR = path.join(__dirname, "public");
 const ZEBRA_DIR = "/Users/katiemirne/Downloads/zebra";
@@ -769,7 +770,7 @@ function sendFrame(socket, text) {
   socket.write(Buffer.concat([header, payload]));
 }
 
-server.listen(PORT, "127.0.0.1", () => {
+server.listen(PORT, HOST, () => {
   console.log(`Othellit is running at http://localhost:${PORT}`);
 });
 
