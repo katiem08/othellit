@@ -1,0 +1,12 @@
+{
+  "name": "othellit",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Othellit online Othello with computer play, friend rooms, and move analytics.",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

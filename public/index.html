@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Othellit</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <nav class="topbar">
+        <button class="brand" id="brandHome" type="button" aria-label="Go to Othellit welcome page">
+          <div class="mark" aria-hidden="true">
+            <span class="mark-disc mark-disc-dark"></span>
+            <span class="mark-disc mark-disc-light"></span>
+          </div>
+          <div>
+            <h1>Othellit</h1>
+            <p id="onlineCount">Connecting...</p>
+          </div>
+        </button>
+        <div class="top-actions">
+          <div class="auth-menu">
+            <button id="authToggle" class="secondary" type="button">Log In / Sign Up</button>
+            <div id="authPanel" class="auth-panel hidden">
+              <div class="row-between">
+                <div class="panel-title">Account</div>
+                <span class="pill" id="accountStatus">Guest</span>
+              </div>
+              <div class="account-tabs" role="tablist" aria-label="Account options">
+                <button id="signupTab" class="active" type="button">Sign Up</button>
+                <button id="signinTab" type="button">Sign In</button>
+                <button id="profileTab" class="hidden" type="button">Account</button>
+              </div>
+              <div id="signupForm" class="account-form">
+                <label>
+                  Username
+                  <input id="signupUsername" maxlength="24" autocomplete="username" placeholder="othellitFan">
+                </label>
+                <label>
+                  Email
+                  <input id="signupEmail" type="email" autocomplete="email" placeholder="you@example.com">
+                </label>
+                <label>
+                  Password
+                  <input id="signupPassword" type="password" autocomplete="new-password" placeholder="8+ characters">
+                </label>
+                <button id="signupButton" type="button">Create Account</button>
+              </div>
+              <div id="signinForm" class="account-form hidden">
+                <label>
+                  Username or email
+                  <input id="signinIdentity" autocomplete="username" placeholder="othellitFan">
+                </label>
+                <label>
+                  Password
+                  <input id="signinPassword" type="password" autocomplete="current-password" placeholder="Password">
+                </label>
+                <button id="signinButton" type="button">Sign In</button>
+              </div>
+              <div id="profileForm" class="account-form hidden">
+                <div class="account-summary">
+                  <div>
+                    <small>Username</small>
+                    <strong id="profileUsername">Guest</strong>
+                  </div>
+                  <div>
+                    <small>Email</small>
+                    <strong id="profileEmail">Not signed in</strong>
+                  </div>
+                </div>
+                <label>
+                  New username
+                  <input id="profileNewUsername" maxlength="24" autocomplete="username" placeholder="New username">
+                </label>
+                <button id="updateUsernameButton" type="button" class="secondary">Update Username</button>
+                <label>
+                  Current password
+                  <input id="profileCurrentPassword" type="password" autocomplete="current-password" placeholder="Current password">
+                </label>
+                <label>
+                  New password
+                  <input id="profileNewPassword" type="password" autocomplete="new-password" placeholder="8+ characters">
+                </label>
+                <button id="updatePasswordButton" type="button" class="secondary">Update Password</button>
+                <button id="logoutButton" type="button" class="danger">Log Out</button>
+              </div>
+              <div class="account-message" id="accountMessage">Create a local prototype account to use a username.</div>
+            </div>
+          </div>
+          <button id="quickComputer" class="primary-action">Play Computer</button>
+        </div>
+      </nav>
+      <div id="serverNotice" class="server-notice hidden">
+        This file preview is visual only. Open http://localhost:4173 to play games, join rooms, and use the engine.
+      </div>
+
+      <section id="homeScreen" class="home-screen">
+        <div class="home-copy">
+          <div class="home-kicker">Online Othello, powered by Zebra analysis</div>
+          <h2>Othellit</h2>
+          <p>Play Othello against the computer, invite friends, and review your moves with Zebra-backed analysis.</p>
+          <div class="home-actions">
+            <button id="playNow" class="primary-action">Play Now</button>
+            <button id="homeFriends" class="secondary">Friends</button>
+          </div>
+          <div class="home-stats">
+            <span><strong>4</strong> engine levels</span>
+            <span><strong>Zebra</strong> move review</span>
+            <span><strong>Live</strong> friend rooms</span>
+          </div>
+        </div>
+        <div class="home-board" aria-hidden="true">
+          <div class="home-board-card">
+            <div class="home-board-top">
+              <span>Opening setup</span>
+              <strong>Ready to play</strong>
+            </div>
+            <div class="mini-board">
+              <span></span><span></span><span></span><span></span>
+            </div>
+            <div class="home-board-bottom">
+              <span class="home-chip">d3</span>
+              <span class="home-chip">c4</span>
+              <span class="home-chip">f5</span>
+              <span class="home-chip">e6</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="appTabs" class="app-tabs hidden">
+        <button id="gameTab" class="active" type="button">Game</button>
+        <button id="friendsTab" type="button">Friends</button>
+        <button id="analyticsTab" type="button">Analytics</button>
+      </section>
+
+      <section id="playLayout" class="play-layout hidden">
+        <aside class="lobby">
+          <section class="quick-card">
+            <div>
+              <div class="panel-title">Play</div>
+              <p>Start a match, practice with the engine, or join a friend room.</p>
+            </div>
+            <button id="computerGame" class="play-tile">
+              <span>vs Computer</span>
+              <small id="selectedLevelLabel">Casual level</small>
+            </button>
+            <div class="level-grid" id="levelPicker">
+              <button data-level="easy">Easy</button>
+              <button data-level="casual" class="active">Casual</button>
+              <button data-level="club">Club</button>
+              <button data-level="expert">Expert</button>
+            </div>
+            <div class="choice-label">Play as</div>
+            <div class="color-grid" id="colorPicker">
+              <button data-color="black">Black</button>
+              <button data-color="white">White</button>
+              <button data-color="random" class="active">Random</button>
+            </div>
+            <div class="room-form">
+              <input id="roomCode" maxlength="18" placeholder="Room code">
+              <button id="joinRoom" class="secondary">Join</button>
+            </div>
+            <button id="createRoom" class="secondary">Create Friend Room</button>
+          </section>
+
+          <section class="friends-card compact-friends">
+            <div class="row-between">
+              <div class="panel-title">Friends</div>
+              <span class="pill" id="friendCount">0 online</span>
+            </div>
+            <div class="friend-add">
+              <input id="friendName" maxlength="24" placeholder="Username">
+              <button id="addFriend" class="secondary">Add</button>
+            </div>
+            <div id="friendList" class="friend-list empty">Add friends by username.</div>
+          </section>
+
+          <section class="rooms-card">
+            <div class="panel-title">Live Rooms</div>
+            <div id="roomList" class="room-list empty">No rooms yet</div>
+          </section>
+        </aside>
+
+        <section class="board-stage">
+          <div class="scorebar">
+            <div class="player-pill dark" id="blackPlayer">
+              <span class="disc black"></span>
+              <span>Black</span>
+              <strong id="blackScore">2</strong>
+            </div>
+            <div class="status" id="gameStatus">Choose a game mode</div>
+            <div class="player-pill" id="whitePlayer">
+              <span class="disc white"></span>
+              <span>White</span>
+              <strong id="whiteScore">2</strong>
+            </div>
+          </div>
+
+          <div class="board-panel">
+            <div class="board-wrap">
+              <div class="files">
+                <span>a</span><span>b</span><span>c</span><span>d</span><span>e</span><span>f</span><span>g</span><span>h</span>
+              </div>
+              <div class="ranks"><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span></div>
+              <div id="board" class="board" aria-label="Othello board"></div>
+            </div>
+          </div>
+        </section>
+
+        <aside class="game-sidebar">
+          <section class="side-card room-card">
+            <div class="panel-title">Room</div>
+            <div class="room-code" id="currentRoom">Not joined</div>
+            <div class="game-control-row">
+              <button id="copyLink" class="secondary">Copy Link</button>
+              <button id="resignGame" class="danger">Resign</button>
+            </div>
+            <small id="shareHint">Friend room links open on the local game server.</small>
+          </section>
+
+          <section class="side-card">
+            <div class="row-between">
+              <div>
+                <div class="panel-title">Move Options</div>
+                <small>Legal move dots</small>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="moveOptionsToggle" checked>
+                <span></span>
+              </label>
+            </div>
+            <div class="row-between">
+              <div>
+                <div class="panel-title">Analyze Move</div>
+                <small>Best move highlights</small>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="analysisToggle">
+                <span></span>
+              </label>
+            </div>
+            <div id="analysis" class="analysis empty">Turn analysis on to see candidate moves.</div>
+          </section>
+
+          <section class="side-card history-panel">
+            <div class="panel-title">Moves</div>
+            <div id="history" class="history empty">Moves will appear here.</div>
+          </section>
+
+          <section class="side-card report-panel hidden" id="reviewPanel">
+            <div class="panel-title">Game Review</div>
+            <div id="rating" class="rating">Stars appear after the game.</div>
+            <div id="report" class="report empty">Finish a game to see blunders, good moves, solid moves, and star summaries.</div>
+          </section>
+        </aside>
+      </section>
+
+      <section id="friendsScreen" class="friends-screen hidden">
+        <section class="friends-hero">
+          <div>
+            <div class="home-kicker">Your Network</div>
+            <h2>Friends</h2>
+            <p>Track who is online, add usernames, and review your recent Othellit games.</p>
+          </div>
+          <span class="pill" id="friendCountLarge">0 online</span>
+        </section>
+
+        <section class="friends-card friends-directory">
+          <div class="section-head">
+            <div>
+              <div class="panel-title">Friend Directory</div>
+              <small>Presence is local to this running server.</small>
+            </div>
+          </div>
+          <div class="friend-add">
+            <input id="friendNameLarge" maxlength="24" placeholder="Username">
+            <button id="addFriendLarge" class="secondary">Add</button>
+          </div>
+          <div id="friendListLarge" class="friend-list empty">Add friends by username.</div>
+        </section>
+        <section class="friends-card games-card">
+          <div class="section-head">
+            <div>
+              <div class="panel-title">Recent Games</div>
+              <small>Computer and friend matches saved on this browser.</small>
+            </div>
+          </div>
+          <div id="friendGames" class="game-history empty">Finished games will appear here.</div>
+        </section>
+      </section>
+
+      <section id="analyticsScreen" class="analytics-screen hidden">
+        <aside class="analytics-controls">
+          <section class="side-card">
+            <div>
+              <div class="panel-title">Game Analytics</div>
+              <p>Click legal moves on the board or paste a move list.</p>
+            </div>
+            <label>
+              Black player
+              <input id="analyticsBlackName" maxlength="24" placeholder="Black">
+            </label>
+            <label>
+              White player
+              <input id="analyticsWhiteName" maxlength="24" placeholder="White">
+            </label>
+            <label>
+              Paste moves
+              <textarea id="analyticsMoveText" rows="4" placeholder="d3 c3 c4 f5"></textarea>
+            </label>
+            <div class="game-control-row">
+              <button id="loadAnalyticsMoves" class="secondary" type="button">Load</button>
+              <button id="resetAnalytics" class="secondary" type="button">Reset</button>
+            </div>
+            <button id="analyzeImportedGame" type="button">Analyze Game</button>
+          </section>
+          <section class="side-card">
+            <div class="panel-title">Move List</div>
+            <div id="analyticsMoves" class="history empty">Click a legal square to add moves.</div>
+          </section>
+        </aside>
+
+        <section class="board-stage analytics-board-stage">
+          <div class="scorebar">
+            <div class="player-pill dark">
+              <span class="disc black"></span>
+              <span id="analyticsBlackLabel">Black</span>
+              <strong id="analyticsBlackScore">2</strong>
+            </div>
+            <div class="status" id="analyticsStatus">Black to move</div>
+            <div class="player-pill">
+              <span class="disc white"></span>
+              <span id="analyticsWhiteLabel">White</span>
+              <strong id="analyticsWhiteScore">2</strong>
+            </div>
+          </div>
+          <div class="board-panel">
+            <div class="board-wrap">
+              <div class="files">
+                <span>a</span><span>b</span><span>c</span><span>d</span><span>e</span><span>f</span><span>g</span><span>h</span>
+              </div>
+              <div class="ranks"><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span></div>
+              <div id="analyticsBoard" class="board" aria-label="Analytics Othello board"></div>
+            </div>
+          </div>
+        </section>
+
+        <aside class="analytics-report-panel">
+          <section class="side-card">
+            <div class="panel-title">Move Review</div>
+            <div id="analyticsSummary" class="rating">Add moves to begin.</div>
+            <div id="analyticsReport" class="report empty">Each clicked move will appear here with best move, loss, and label.</div>
+          </section>
+        </aside>
+      </section>
+    </main>
+    <script src="./app.js"></script>
+  </body>
+</html>
