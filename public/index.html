@@ -116,14 +116,17 @@
               <span>Opening move</span>
               <strong id="homeBoardCue">Tap d3 to play</strong>
             </div>
-            <div id="homeMiniBoard" class="mini-board" aria-label="Start Othellit from an opening move" role="button" tabindex="0">
+            <div class="mini-board-frame">
+              <div class="mini-files" aria-hidden="true">
+                <span>a</span><span>b</span><span>c</span><span>d</span><span>e</span><span>f</span><span>g</span><span>h</span>
+              </div>
+              <div class="mini-ranks" aria-hidden="true">
+                <span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span>
+              </div>
+              <div id="homeMiniBoard" class="mini-board" aria-label="Start Othellit from the highlighted d3 opening move" role="button" tabindex="0">
+              </div>
             </div>
-            <div class="home-board-bottom">
-              <span class="home-chip active">d3</span>
-              <span class="home-chip">c4</span>
-              <span class="home-chip">f5</span>
-              <span class="home-chip">e6</span>
-            </div>
+            <p class="home-board-hint">Flip the highlighted square to enter the board.</p>
           </div>
         </div>
       </section>

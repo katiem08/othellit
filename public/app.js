@@ -414,6 +414,7 @@ function showScreen(screen) {
 function resetHomeOpeningPreview() {
   homeOpeningPlayed = false;
   clearTimeout(homeOpeningTimer);
+  homeScreenEl.classList.remove("opening-enter");
   homeBoardCueEl.textContent = "Tap d3 to play";
   renderHomeOpeningPreview();
 }
@@ -432,6 +433,9 @@ function renderHomeOpeningPreview() {
     if (index === 19 && !homeOpeningPlayed) {
       cell.classList.add("mini-playable");
       cell.appendChild(document.createElement("i"));
+      const label = document.createElement("b");
+      label.textContent = "d3";
+      cell.appendChild(label);
     }
     if ((index === 19 || index === 27) && homeOpeningPlayed) cell.classList.add("flipped");
     if (piece !== 0) {
@@ -447,10 +451,11 @@ function playHomeOpeningMove() {
   if (homeOpeningPlayed) return;
   homeOpeningPlayed = true;
   homeBoardCueEl.textContent = "Nice. Let's play.";
+  homeScreenEl.classList.add("opening-enter");
   playMoveSound();
   renderHomeOpeningPreview();
   clearTimeout(homeOpeningTimer);
-  homeOpeningTimer = setTimeout(() => showScreen("game"), 650);
+  homeOpeningTimer = setTimeout(() => showScreen("game"), 780);
 }
 
 function renderBoard() {
