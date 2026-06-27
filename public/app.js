@@ -23,6 +23,7 @@ let analyticsBoardState = [];
 let analyticsTurn = BLACK;
 let analyticsHistory = [];
 let analyticsTimer = null;
+let selectedGamePerson = { type: "me", name: null };
 const recordedRooms = new Set(JSON.parse(localStorage.getItem("othellitRecordedRooms") || "[]"));
 const pendingMessages = [];
 const clientId = getClientId();
@@ -90,6 +91,8 @@ const friendNameLargeEl = document.querySelector("#friendNameLarge");
 const friendListLargeEl = document.querySelector("#friendListLarge");
 const friendCountLargeEl = document.querySelector("#friendCountLarge");
 const friendGamesEl = document.querySelector("#friendGames");
+const friendGamesTitleEl = document.querySelector("#friendGamesTitle");
+const friendGamesHintEl = document.querySelector("#friendGamesHint");
 const analyticsScreenEl = document.querySelector("#analyticsScreen");
 const analyticsBoardEl = document.querySelector("#analyticsBoard");
 const analyticsStatusEl = document.querySelector("#analyticsStatus");
@@ -897,29 +900,81 @@ function renderFriends() {
   const onlineCount = list.filter((friend) => onlineSet.has(friend)).length;
   friendCountEl.textContent = `${onlineCount} online`;
   friendCountLargeEl.textContent = `${onlineCount} online`;
+  renderCompactFriendList(list, onlineSet);
+  renderPeopleList(list, onlineSet);
+  renderGameHistory();
+}
+
+function renderCompactFriendList(list, onlineSet) {
   if (!list.length) {
     friendListEl.className = "friend-list empty";
     friendListEl.textContent = "Add friends by username.";
-    friendListLargeEl.className = "friend-list empty";
-    friendListLargeEl.textContent = "Add friends by username.";
     return;
   }
   friendListEl.className = "friend-list";
-  friendListLargeEl.className = "friend-list";
   friendListEl.innerHTML = "";
-  friendListLargeEl.innerHTML = "";
   list.forEach((friend) => {
     const online = onlineSet.has(friend);
     const html = `<span><i class="${online ? "online" : ""}"></i>${friend}</span><small>${online ? "online" : "offline"}</small>`;
     const row = document.createElement("div");
     row.className = "friend-row";
     row.innerHTML = html;
-    const largeRow = document.createElement("div");
-    largeRow.className = "friend-row";
-    largeRow.innerHTML = html;
     friendListEl.appendChild(row);
-    friendListLargeEl.appendChild(largeRow);
   });
+}
+
+function renderPeopleList(list, onlineSet) {
+  const people = friendGamePeople(list);
+  friendListLargeEl.className = "friend-list";
+  friendListLargeEl.innerHTML = "";
+  people.forEach((person) => friendListLargeEl.appendChild(personRow(person, onlineSet)));
+}
+
+function friendGamePeople(list) {
+  const meName = activePlayerName();
+  if (selectedGamePerson.type === "me") selectedGamePerson.name = meName;
+  const seen = new Set([normalizeName(meName)]);
+  const people = [{ type: "me", name: meName, label: "Me" }];
+  list.forEach((friend) => {
+    const key = normalizeName(friend);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    people.push({ type: "friend", name: friend, label: friend });
+  });
+  if (!people.some((person) => samePerson(person, selectedGamePerson))) selectedGamePerson = { type: "me", name: meName };
+  return people;
+}
+
+function personRow(person, onlineSet) {
+  const games = gamesForPerson(person);
+  const online = person.type === "me" || onlineSet.has(person.name);
+  const selected = samePerson(person, selectedGamePerson);
+  const row = document.createElement("div");
+  row.className = `person-row ${selected ? "active" : ""}`;
+  row.innerHTML = `<span><i class="${online ? "online" : ""}"></i><strong>${person.label}</strong><small>${person.type === "me" ? person.name : online ? "online" : "offline"}</small></span>`;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "secondary";
+  button.textContent = games.length ? `Review Games (${games.length})` : "No games";
+  button.disabled = !games.length;
+  button.addEventListener("click", () => {
+    selectedGamePerson = { type: person.type, name: person.name };
+    renderFriends();
+  });
+  row.appendChild(button);
+  return row;
+}
+
+function activePlayerName() {
+  return currentAccount()?.username || "Guest";
+}
+
+function normalizeName(name) {
+  return String(name || "").trim().toLowerCase();
+}
+
+function samePerson(a, b) {
+  return a?.type === b?.type && normalizeName(a?.name) === normalizeName(b?.name);
 }
 
 function accounts() {
@@ -938,6 +993,7 @@ function setCurrentAccount(account) {
   const publicAccount = account ? { username: account.username, email: account.email } : null;
   localStorage.setItem("othellitCurrentAccount", JSON.stringify(publicAccount));
   renderAccount();
+  renderFriends();
 }
 
 function renderAccount() {
@@ -1090,11 +1146,13 @@ function maybeRecordGame() {
   const account = currentAccount();
   const black = currentRoom.players.black?.name || "Black";
   const white = currentRoom.players.white?.name || "White";
+  const user = account?.username || "Guest";
   const entry = {
     id: currentRoom.id,
     date: new Date().toISOString(),
     mode: currentRoom.mode,
-    user: account?.username || "Guest",
+    user,
+    players: [black, white],
     black,
     white,
     score: `${currentRoom.counts.black}-${currentRoom.counts.white}`,
@@ -1109,10 +1167,16 @@ function maybeRecordGame() {
 }
 
 function renderGameHistory() {
-  const list = gameHistory();
+  const person = selectedGamePerson.type === "me" ? { ...selectedGamePerson, name: activePlayerName() } : selectedGamePerson;
+  const list = gamesForPerson(person);
+  const personLabel = person.type === "me" ? "My Games" : `${person.name}'s Games`;
+  friendGamesTitleEl.textContent = personLabel;
+  friendGamesHintEl.textContent = person.type === "me"
+    ? "Only games played from your current Othellit account on this browser."
+    : `Only saved games involving ${person.name}.`;
   if (!list.length) {
     friendGamesEl.className = "game-history empty";
-    friendGamesEl.textContent = "Finished computer and friend games will appear here.";
+    friendGamesEl.textContent = person.type === "me" ? "Your saved games will appear here." : `No saved games with ${person.name} yet.`;
     return;
   }
   friendGamesEl.className = "game-history";
@@ -1127,6 +1191,18 @@ function renderGameHistory() {
     if (game.moves?.length) row.addEventListener("click", () => openSavedGameReview(game));
     friendGamesEl.appendChild(row);
   });
+}
+
+function gamesForPerson(person) {
+  return gameHistory().filter((game) => gameBelongsToPerson(game, person));
+}
+
+function gameBelongsToPerson(game, person) {
+  const name = normalizeName(person?.name);
+  if (!name) return false;
+  const participants = (game.players?.length ? game.players : [game.black, game.white]).map(normalizeName);
+  if (person.type === "me") return normalizeName(game.user) === name || (!game.user && participants.includes(name));
+  return participants.includes(name);
 }
 
 function openSavedGameReview(game) {
