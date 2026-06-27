@@ -14,6 +14,8 @@ let currentRoom = null;
 let latestAnalysis = [];
 let latestAnalysisSource = "local";
 let lobbyOnlinePlayers = [];
+let boardView = { mode: "live", ply: null, bestIndex: null, playedIndex: null };
+let lastRoomHistoryLength = 0;
 let analyticsBoardState = [];
 let analyticsTurn = BLACK;
 let analyticsHistory = [];
@@ -141,7 +143,12 @@ function connect() {
       history.replaceState(null, "", `?room=${data.roomId}`);
     }
     if (data.type === "room") {
+      const nextHistoryLength = data.room.history?.length || 0;
+      if (currentRoom?.id !== data.room.id || (data.room.status === "playing" && nextHistoryLength !== lastRoomHistoryLength)) {
+        boardView = { mode: "live", ply: null, bestIndex: null, playedIndex: null };
+      }
       currentRoom = data.room;
+      lastRoomHistoryLength = nextHistoryLength;
       myColor = data.room.viewerColor ?? myColor;
       checkAssignedColor();
       latestAnalysis = [];
@@ -238,6 +245,8 @@ function joinRoom(code) {
 function startComputerGame() {
   showScreen("game");
   currentRoom = null;
+  boardView = { mode: "live", ply: null, bestIndex: null, playedIndex: null };
+  lastRoomHistoryLength = 0;
   latestAnalysis = [];
   renderBoard();
   pendingExpectedColor = colorChoiceValue(selectedColor);
@@ -338,24 +347,58 @@ function showScreen(screen) {
 
 function renderBoard() {
   boardEl.innerHTML = "";
-  const board = currentRoom ? currentRoom.board : previewBoard;
-  const legal = currentRoom ? (currentRoom.turn === BLACK ? currentRoom.legal.black : currentRoom.legal.white) : [];
-  const canMove = currentRoom?.status === "playing" && myColor === currentRoom.turn;
-  const best = latestAnalysis[0]?.index;
-  const good = latestAnalysis[1]?.index;
+  const replay = currentRoom ? replayBoardView() : null;
+  const board = replay?.board || (currentRoom ? currentRoom.board : previewBoard);
+  if (currentRoom) {
+    const viewCounts = board.reduce((acc, piece) => {
+      if (piece === BLACK) acc.black += 1;
+      if (piece === WHITE) acc.white += 1;
+      return acc;
+    }, { black: 0, white: 0 });
+    blackScoreEl.textContent = viewCounts.black;
+    whiteScoreEl.textContent = viewCounts.white;
+  }
+  const liveView = !currentRoom || boardView.mode === "live";
+  const legal = currentRoom && liveView ? (currentRoom.turn === BLACK ? currentRoom.legal.black : currentRoom.legal.white) : [];
+  const canMove = currentRoom?.status === "playing" && myColor === currentRoom.turn && liveView;
+  const showEngineHints = currentRoom?.mode === "computer" || currentRoom?.status === "complete";
+  const best = liveView ? latestAnalysis[0]?.index : boardView.bestIndex;
+  const good = liveView ? latestAnalysis[1]?.index : null;
+  const liveLastIndex = liveView ? currentRoom?.history?.at(-1)?.index : null;
+  const showBestHighlight = boardView.mode === "review" || (analysisToggleEl.checked && showEngineHints);
   board.forEach((piece, index) => {
     const cell = cellEl(index, piece);
-    if (legal.includes(index) && moveOptionsToggleEl.checked) {
+    if (index === (replay?.lastIndex ?? liveLastIndex)) cell.classList.add("last-move");
+    if (index === boardView.playedIndex) cell.classList.add("played-review");
+    if (legal.includes(index) && moveOptionsToggleEl.checked && canMove) {
       cell.classList.add("legal");
     }
     if (legal.includes(index) && canMove) {
       cell.classList.add("playable");
       cell.addEventListener("click", () => send({ type: "move", index }));
     }
-    if (analysisToggleEl.checked && index === best) cell.classList.add("best");
-    if (analysisToggleEl.checked && index === good) cell.classList.add("good");
+    if (showBestHighlight && index === best) cell.classList.add("best");
+    if (analysisToggleEl.checked && showEngineHints && index === good) cell.classList.add("good");
     boardEl.appendChild(cell);
   });
+}
+
+function replayBoardView() {
+  if (!currentRoom || boardView.mode === "live") return null;
+  const history = currentRoom.history || [];
+  const beforeMove = boardView.mode === "review";
+  const target = Math.max(0, Math.min(boardView.ply || 0, history.length));
+  const applyCount = beforeMove ? Math.max(0, target - 1) : target;
+  const board = initialClientBoard();
+  for (let i = 0; i < applyCount; i += 1) applyReplayMove(board, history[i]);
+  const last = beforeMove ? history[target - 1] : history[applyCount - 1];
+  return { board, lastIndex: last?.index ?? null };
+}
+
+function applyReplayMove(board, entry) {
+  const flips = clientCaptures(board, entry.index, entry.color);
+  board[entry.index] = entry.color;
+  flips.forEach((flip) => { board[flip] = entry.color; });
 }
 
 function cellEl(index, piece) {
@@ -384,17 +427,53 @@ function renderHistory() {
   historyEl.className = "history";
   historyEl.innerHTML = "";
   currentRoom.history.forEach((entry, i) => {
-    const item = document.createElement("div");
+    const item = document.createElement("button");
+    item.type = "button";
     item.className = "move-item";
+    if (boardView.mode === "after" && boardView.ply === i + 1) item.classList.add("active");
     item.innerHTML = `<span>${i + 1}. ${entry.color === BLACK ? "Black" : "White"} ${entry.move}</span><span class="tag">${entry.color === BLACK ? "B" : "W"}</span>`;
+    item.addEventListener("click", () => showBoardAfterMove(i + 1));
     historyEl.appendChild(item);
   });
+  const liveButton = document.createElement("button");
+  liveButton.type = "button";
+  liveButton.className = `move-item ${boardView.mode === "live" ? "active" : ""}`;
+  liveButton.innerHTML = "<span>Live position</span><span class=\"tag\">Now</span>";
+  liveButton.addEventListener("click", showLiveBoard);
+  historyEl.appendChild(liveButton);
+}
+
+function showBoardAfterMove(ply) {
+  boardView = { mode: "after", ply, bestIndex: null, playedIndex: null };
+  renderBoard();
+  renderHistory();
+  const entry = currentRoom?.history?.[ply - 1];
+  if (entry) statusEl.textContent = `Showing after ${ply}. ${colorName(entry.color)} ${entry.move}`;
+}
+
+function showReviewPosition(row) {
+  boardView = { mode: "review", ply: row.turn, bestIndex: moveIndexClient(row.bestMove), playedIndex: moveIndexClient(row.move) };
+  renderBoard();
+  renderHistory();
+  statusEl.textContent = `Reviewing ${row.turn}. ${colorName(row.color)} ${row.move} · best ${row.bestMove}`;
+}
+
+function showLiveBoard() {
+  boardView = { mode: "live", ply: null, bestIndex: null, playedIndex: null };
+  renderBoard();
+  renderHistory();
+  renderRoom();
 }
 
 function renderAnalysis() {
   if (!analysisToggleEl.checked) {
     analysisEl.className = "analysis empty";
     analysisEl.textContent = "Turn analysis on to see candidate moves.";
+    return;
+  }
+  if (currentRoom && currentRoom.mode !== "computer" && currentRoom.status !== "complete") {
+    analysisEl.className = "analysis empty";
+    analysisEl.textContent = "Best-move hints are only shown in computer games.";
     return;
   }
   if (!latestAnalysis.length) {
@@ -429,9 +508,12 @@ function renderReport() {
   reportEl.className = "report";
   reportEl.innerHTML = `<div class="engine-source">Review source: ${currentRoom.analysisSource || moves[0]?.source || "local"}</div>`;
   moves.forEach((row) => {
-    const item = document.createElement("div");
+    const item = document.createElement("button");
+    item.type = "button";
     item.className = "report-item";
+    if (boardView.mode === "review" && boardView.ply === row.turn) item.classList.add("active");
     item.innerHTML = `<span>${row.turn}. ${row.color === BLACK ? "Black" : "White"} ${row.move}<br><small>Best: ${row.bestMove} | loss ${Number(row.loss).toFixed(1)}</small></span><span class="tag ${row.label}">${row.label}</span>`;
+    item.addEventListener("click", () => showReviewPosition(row));
     reportEl.appendChild(item);
   });
 }
@@ -887,7 +969,7 @@ function renderGameHistory() {
 }
 
 function requestAnalysis() {
-  if (analysisToggleEl.checked && currentRoom?.status !== "complete") send({ type: "analyze" });
+  if (analysisToggleEl.checked && currentRoom?.status !== "complete" && currentRoom?.mode === "computer") send({ type: "analyze" });
 }
 
 function resignCurrentGame() {

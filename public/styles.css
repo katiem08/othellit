@@ -784,6 +784,21 @@ h1 {
   cursor: pointer;
 }
 
+.cell.last-move::before,
+.cell.played-review::before {
+  content: "";
+  position: absolute;
+  inset: 7px;
+  border-radius: 6px;
+  border: 3px solid rgba(240, 198, 78, 0.9);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.cell.played-review::before {
+  border-color: rgba(109, 168, 214, 0.95);
+}
+
 .cell.legal::after {
   content: "";
   width: 30%;
@@ -893,6 +908,30 @@ h1 {
   padding: 8px 10px;
   border-radius: 6px;
   background: var(--surface-3);
+}
+
+button.move-item,
+button.report-item {
+  width: 100%;
+  min-height: 36px;
+  border: 0;
+  color: var(--muted);
+  font-weight: 760;
+  text-align: left;
+}
+
+button.move-item:hover,
+button.report-item:hover,
+button.move-item.active,
+button.report-item.active {
+  filter: none;
+  background: #28261f;
+  box-shadow: inset 0 0 0 1px rgba(240, 198, 78, 0.42);
+}
+
+button.move-item span:first-child,
+button.report-item span:first-child {
+  color: var(--text);
 }
 
 .game-row {
