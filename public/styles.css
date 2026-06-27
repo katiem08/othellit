@@ -111,9 +111,9 @@ p {
 
 .topbar {
   min-height: 76px;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(180px, auto) minmax(260px, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
   gap: 18px;
   padding: 14px 22px;
   border-bottom: 1px solid #161512;
@@ -199,6 +199,7 @@ h1 {
   display: flex;
   gap: 10px;
   align-items: center;
+  justify-content: end;
   position: relative;
 }
 
@@ -528,21 +529,27 @@ h1 {
 
 .app-tabs {
   display: flex;
-  gap: 8px;
-  padding: 14px 18px 0;
+  justify-content: center;
+  gap: 6px;
+  padding: 4px;
+  width: fit-content;
+  justify-self: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(20, 20, 18, 0.42);
 }
 
 .app-tabs button {
-  min-height: 36px;
-  background: var(--surface-2);
+  min-height: 34px;
+  padding: 0 14px;
+  background: transparent;
   color: var(--muted);
-  border: 1px solid var(--line);
+  border: 0;
 }
 
 .app-tabs button.active {
   background: var(--gold);
   color: #241c05;
-  border-color: transparent;
 }
 
 .friends-screen {
@@ -1264,18 +1271,27 @@ button.report-item span:first-child {
 
 @media (max-width: 860px) {
   .topbar,
+  .app-tabs,
   .top-actions {
     align-items: stretch;
   }
 
   .topbar {
-    flex-direction: column;
+    grid-template-columns: minmax(0, 1fr);
   }
 
+  .app-tabs,
   .top-actions {
     width: 100%;
+    justify-self: stretch;
   }
 
+  .app-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .app-tabs button,
   .top-actions button {
     flex: 1;
   }

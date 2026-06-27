@@ -399,7 +399,6 @@ function showScreen(screen) {
   playLayoutEl.classList.toggle("hidden", screen !== "game");
   friendsScreenEl.classList.toggle("hidden", screen !== "friends");
   analyticsScreenEl.classList.toggle("hidden", screen !== "analytics");
-  appTabsEl.classList.toggle("hidden", screen === "home");
   gameTabEl.classList.toggle("active", screen === "game");
   friendsTabEl.classList.toggle("active", screen === "friends");
   analyticsTabEl.classList.toggle("active", screen === "analytics");
@@ -1148,7 +1147,6 @@ document.querySelector("#createRoom").addEventListener("click", () => {
 });
 document.querySelector("#joinRoom").addEventListener("click", () => joinRoom());
 document.querySelector("#computerGame").addEventListener("click", startComputerGame);
-document.querySelector("#quickComputer").addEventListener("click", startComputerGame);
 document.querySelector("#resignGame").addEventListener("click", resignCurrentGame);
 document.querySelector("#copyLink").addEventListener("click", async () => {
   const id = currentRoom?.id || cleanRoomCode(roomCodeEl.value || roomEl.textContent);
