@@ -1,6 +1,6 @@
 const BLACK = 1;
 const WHITE = -1;
-const EXPECTED_SERVER_VERSION = 7;
+const EXPECTED_SERVER_VERSION = 8;
 let socket;
 let myId = "";
 let myColor = 0;
@@ -486,7 +486,7 @@ function renderBoard() {
   board.forEach((piece, index) => {
     const cell = cellEl(index, piece);
     if (flipIndexes.has(index)) cell.classList.add("flipped");
-    if (index === (replay?.lastIndex ?? liveLastIndex)) cell.classList.add("last-move");
+    if (liveView && index === liveLastIndex) cell.classList.add("last-move");
     if (index === boardView.playedIndex) cell.classList.add("played-review");
     if (legal.includes(index) && moveOptionsToggleEl.checked && canMove) {
       cell.classList.add("legal");

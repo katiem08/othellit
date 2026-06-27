@@ -6,7 +6,7 @@ const path = require("path");
 
 const PORT = process.env.PORT || 4173;
 const HOST = process.env.HOST || "0.0.0.0";
-const SERVER_VERSION = 7;
+const SERVER_VERSION = 8;
 const PUBLIC_DIR = path.join(__dirname, "public");
 const ZEBRA_DIR = "/Users/katiemirne/Downloads/zebra";
 const ZEBRA_PRACTICE = path.join(ZEBRA_DIR, "practice");
@@ -18,10 +18,10 @@ const EMPTY = 0;
 const BLACK = 1;
 const WHITE = -1;
 const HUMAN_LEVELS = {
-  easy: { depth: 1, noise: 18 },
-  casual: { depth: 2, noise: 8 },
-  club: { depth: 3, noise: 2 },
-  expert: { depth: 4, noise: 0 }
+  easy: { depth: 2, noise: 22, book: false, zebra: false, endgame: 8 },
+  casual: { depth: 3, noise: 7, book: true, zebra: false, endgame: 10 },
+  club: { depth: 4, noise: 1.5, book: true, zebra: false, endgame: 12 },
+  expert: { depth: 6, noise: 0, book: true, zebra: true, endgame: 16 }
 };
 const WEIGHTS = [
   120, -22, 20, 8, 8, 20, -22, 120,
@@ -231,9 +231,21 @@ function openingBookMoves(sequence, board, color) {
   return ranked;
 }
 
-function chooseComputerMove(board, color, level) {
+function exactEndgameMoves(board, color) {
+  const empties = board.filter((cell) => cell === EMPTY).length;
+  return analyzeMoves(board, color, Math.max(1, empties));
+}
+
+async function chooseComputerMove(room, color) {
+  const { board, level } = room;
   const config = HUMAN_LEVELS[level] || HUMAN_LEVELS.casual;
-  const ranked = analyzeMoves(board, color, config.depth);
+  const sequence = historySequence(room.history || []);
+  const book = config.book ? openingBookMoves(sequence, board, color) : null;
+  if (book?.length) return book[0].index;
+  const zebra = config.zebra ? await zebraAnalyzeSequence(sequence) : null;
+  if (zebra?.length) return zebra[0].index;
+  const empties = board.filter((cell) => cell === EMPTY).length;
+  const ranked = empties <= config.endgame ? exactEndgameMoves(board, color) : analyzeMoves(board, color, config.depth);
   if (!ranked.length) return null;
   const noisy = ranked
     .map((move) => ({ ...move, pickScore: move.score + (Math.random() - 0.5) * config.noise }))
@@ -648,12 +660,12 @@ function makePlayerMove(socket, index) {
 function scheduleComputerMove(room) {
   const color = computerColor(room);
   if (room.mode !== "computer" || room.status !== "playing" || room.turn !== color) return;
-  setTimeout(() => {
+  setTimeout(async () => {
     const liveRoom = rooms.get(room.id);
     if (!liveRoom || liveRoom.status !== "playing") return;
     const liveColor = computerColor(liveRoom);
     if (!liveColor || liveRoom.turn !== liveColor) return;
-    const computerMove = chooseComputerMove(liveRoom.board, liveColor, liveRoom.level);
+    const computerMove = await chooseComputerMove(liveRoom, liveColor);
     if (computerMove === null) {
       updateGameStatus(liveRoom);
       broadcast(liveRoom);
