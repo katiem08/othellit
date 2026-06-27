@@ -1,6 +1,6 @@
 const BLACK = 1;
 const WHITE = -1;
-const EXPECTED_SERVER_VERSION = 8;
+const EXPECTED_SERVER_VERSION = 9;
 let socket;
 let myId = "";
 let myColor = 0;

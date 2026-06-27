@@ -6,7 +6,7 @@ const path = require("path");
 
 const PORT = process.env.PORT || 4173;
 const HOST = process.env.HOST || "0.0.0.0";
-const SERVER_VERSION = 8;
+const SERVER_VERSION = 9;
 const PUBLIC_DIR = path.join(__dirname, "public");
 const ZEBRA_DIR = "/Users/katiemirne/Downloads/zebra";
 const ZEBRA_PRACTICE = path.join(ZEBRA_DIR, "practice");
@@ -18,10 +18,10 @@ const EMPTY = 0;
 const BLACK = 1;
 const WHITE = -1;
 const HUMAN_LEVELS = {
-  easy: { depth: 2, noise: 22, book: false, zebra: false, endgame: 8 },
-  casual: { depth: 3, noise: 7, book: true, zebra: false, endgame: 10 },
-  club: { depth: 4, noise: 1.5, book: true, zebra: false, endgame: 12 },
-  expert: { depth: 6, noise: 0, book: true, zebra: true, endgame: 16 }
+  easy: { depth: 2, noise: 14, topChoices: 5, book: true, bookChance: 0.45, zebra: false, mistakeRate: 0.14, endgame: 6 },
+  casual: { depth: 3, noise: 4, topChoices: 3, book: true, bookChance: 0.75, zebra: false, mistakeRate: 0.055, endgame: 8 },
+  club: { depth: 5, noise: 0.7, topChoices: 2, book: true, bookChance: 0.95, zebra: false, mistakeRate: 0.012, endgame: 10 },
+  expert: { depth: 7, noise: 0, topChoices: 1, book: true, bookChance: 1, zebra: true, mistakeRate: 0, endgame: 12 }
 };
 const WEIGHTS = [
   120, -22, 20, 8, 8, 20, -22, 120,
@@ -236,21 +236,30 @@ function exactEndgameMoves(board, color) {
   return analyzeMoves(board, color, Math.max(1, empties));
 }
 
+function pickRankedMove(ranked, config) {
+  if (!ranked.length) return null;
+  if (Math.random() < config.mistakeRate && ranked.length > 1) {
+    const mistakePool = ranked.slice(1, Math.min(ranked.length, Math.max(3, config.topChoices + 2)));
+    return mistakePool[Math.floor(Math.random() * mistakePool.length)].index;
+  }
+  const pool = ranked.slice(0, Math.max(1, config.topChoices));
+  const noisy = pool
+    .map((move) => ({ ...move, pickScore: move.score + (Math.random() - 0.5) * config.noise }))
+    .sort((a, b) => b.pickScore - a.pickScore);
+  return noisy[0].index;
+}
+
 async function chooseComputerMove(room, color) {
   const { board, level } = room;
   const config = HUMAN_LEVELS[level] || HUMAN_LEVELS.casual;
   const sequence = historySequence(room.history || []);
   const book = config.book ? openingBookMoves(sequence, board, color) : null;
-  if (book?.length) return book[0].index;
+  if (book?.length && Math.random() < config.bookChance) return pickRankedMove(book, config);
   const zebra = config.zebra ? await zebraAnalyzeSequence(sequence) : null;
-  if (zebra?.length) return zebra[0].index;
+  if (zebra?.length) return pickRankedMove(zebra, config);
   const empties = board.filter((cell) => cell === EMPTY).length;
   const ranked = empties <= config.endgame ? exactEndgameMoves(board, color) : analyzeMoves(board, color, config.depth);
-  if (!ranked.length) return null;
-  const noisy = ranked
-    .map((move) => ({ ...move, pickScore: move.score + (Math.random() - 0.5) * config.noise }))
-    .sort((a, b) => b.pickScore - a.pickScore);
-  return noisy[0].index;
+  return pickRankedMove(ranked, config);
 }
 
 function moveName(index) {
