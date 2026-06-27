@@ -112,10 +112,10 @@ p {
 .topbar {
   min-height: 76px;
   display: grid;
-  grid-template-columns: minmax(180px, auto) minmax(260px, 1fr) auto;
+  grid-template-columns: minmax(210px, 1fr) minmax(360px, auto) minmax(210px, 1fr);
   align-items: center;
-  gap: 18px;
-  padding: 14px 22px;
+  gap: clamp(20px, 4vw, 56px);
+  padding: 14px clamp(22px, 4vw, 44px);
   border-bottom: 1px solid #161512;
   background: rgba(36, 35, 31, 0.96);
   backdrop-filter: blur(14px);
@@ -128,6 +128,7 @@ p {
   display: flex;
   align-items: center;
   gap: 12px;
+  justify-self: start;
   min-height: 48px;
   padding: 0;
   border: 0;
@@ -530,9 +531,9 @@ h1 {
 .app-tabs {
   display: flex;
   justify-content: center;
-  gap: 6px;
-  padding: 4px;
-  width: fit-content;
+  gap: 8px;
+  padding: 5px;
+  width: min(460px, 100%);
   justify-self: center;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -541,7 +542,8 @@ h1 {
 
 .app-tabs button {
   min-height: 34px;
-  padding: 0 14px;
+  flex: 1;
+  padding: 0 18px;
   background: transparent;
   color: var(--muted);
   border: 0;
@@ -1266,6 +1268,18 @@ button.report-item span:first-child {
 
   .friends-hero {
     grid-column: auto;
+  }
+}
+
+@media (max-width: 980px) {
+  .topbar {
+    grid-template-columns: minmax(200px, 1fr) minmax(180px, auto);
+  }
+
+  .app-tabs {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    width: min(100%, 560px);
   }
 }
 
