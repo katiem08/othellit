@@ -266,6 +266,10 @@ function renderRoom() {
   renderHistory();
   renderReport();
   maybeRecordGame();
+  if (boardView.mode !== "live") {
+    renderBoardViewStatus();
+    return;
+  }
   const turnName = currentRoom.turn === BLACK ? "Black" : "White";
   const passText = currentRoom.lastPass ? `${colorName(currentRoom.lastPass.color)} had no moves. ` : "";
   if (currentRoom.status === "complete") {
@@ -447,15 +451,30 @@ function showBoardAfterMove(ply) {
   boardView = { mode: "after", ply, bestIndex: null, playedIndex: null };
   renderBoard();
   renderHistory();
-  const entry = currentRoom?.history?.[ply - 1];
-  if (entry) statusEl.textContent = `Showing after ${ply}. ${colorName(entry.color)} ${entry.move}`;
+  renderBoardViewStatus();
 }
 
 function showReviewPosition(row) {
   boardView = { mode: "review", ply: row.turn, bestIndex: moveIndexClient(row.bestMove), playedIndex: moveIndexClient(row.move) };
   renderBoard();
   renderHistory();
-  statusEl.textContent = `Reviewing ${row.turn}. ${colorName(row.color)} ${row.move} · best ${row.bestMove}`;
+  renderBoardViewStatus(row);
+}
+
+function renderBoardViewStatus(reviewRow = null) {
+  if (!currentRoom || boardView.mode === "live") return;
+  const total = currentRoom.history?.length || 0;
+  const ply = Math.max(0, Math.min(boardView.ply || 0, total));
+  const entry = currentRoom.history?.[ply - 1];
+  const distance = Math.max(0, total - ply);
+  const ago = distance === 0 ? "current move" : `${distance} move${distance === 1 ? "" : "s"} ago`;
+  if (boardView.mode === "review") {
+    const row = reviewRow || currentRoom.report?.find((item) => item.turn === ply);
+    const best = row?.bestMove ? ` · best ${row.bestMove}` : "";
+    statusEl.textContent = `Reviewing ${ply}. ${entry ? `${colorName(entry.color)} ${entry.move}` : "position"} · ${ago}${best}`;
+    return;
+  }
+  statusEl.textContent = `Showing after ${ply}. ${entry ? `${colorName(entry.color)} ${entry.move}` : "starting position"} · ${ago}`;
 }
 
 function showLiveBoard() {
