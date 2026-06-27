@@ -6,7 +6,7 @@ const path = require("path");
 
 const PORT = process.env.PORT || 4173;
 const HOST = process.env.HOST || "0.0.0.0";
-const SERVER_VERSION = 5;
+const SERVER_VERSION = 6;
 const PUBLIC_DIR = path.join(__dirname, "public");
 const ZEBRA_DIR = "/Users/katiemirne/Downloads/zebra";
 const ZEBRA_PRACTICE = path.join(ZEBRA_DIR, "practice");
@@ -35,6 +35,47 @@ const WEIGHTS = [
 ];
 const sockets = new Map();
 const rooms = new Map();
+const OPENING_BOOK = new Map([
+  ["", ["e6", "f5", "d3", "c4"]],
+  ["e6", ["f6", "f4"]],
+  ["e6f6", ["f5"]],
+  ["e6f6f5", ["f4", "d6"]],
+  ["e6f6f5d6", ["c5", "e7"]],
+  ["e6f6f5d6e7", ["f4", "g5"]],
+  ["e6f6f5d6e7g5", ["c5"]],
+  ["e6f6f5d6e7g5g4", ["f7"]],
+  ["e6f6f5d6e7g5g4f7", ["d7"]],
+  ["e6f6f5d6e7g5g4f7h5", ["h3"]],
+  ["e6f6f5d6e7g5g4f7h5h3", ["g6"]],
+  ["e6f6f5d6e7g5g4f7h5h3g3", ["e3"]],
+  ["e6f6f5d6e7g5g4f7h5h3g3h4", ["h2"]],
+  ["e6f6f5d6e7g5g4f7h5h3g3h4g6", ["h6"]],
+  ["e6f6f5d6e7g5g4f7h5h3g3h4g6h6", ["d7"]],
+  ["e6f6f5d6e7g5g4f7h5h3g3h4g6h6f8", ["d8"]],
+  ["e6f6f5d6e7g5g4f7h5h3g3h4g6h6f8d8", ["c6"]],
+  ["e6f6f5d6e7g5g4f7h5h3g3h4g6h6f8d8e8", ["g8"]]
+]);
+
+const OPENING_PLAYED_LABELS = new Map([
+  ["e6", "best"],
+  ["e6f6", "best"],
+  ["e6f6f5", "best"],
+  ["e6f6f5d6", "best"],
+  ["e6f6f5d6e7", "best"],
+  ["e6f6f5d6e7g5", "best"],
+  ["e6f6f5d6e7g5g4", "solid"],
+  ["e6f6f5d6e7g5g4f7", "solid"],
+  ["e6f6f5d6e7g5g4f7h5", "solid"],
+  ["e6f6f5d6e7g5g4f7h5h3", "best"],
+  ["e6f6f5d6e7g5g4f7h5h3g3", "good"],
+  ["e6f6f5d6e7g5g4f7h5h3g3h4", "blunder"],
+  ["e6f6f5d6e7g5g4f7h5h3g3h4g6", "blunder"],
+  ["e6f6f5d6e7g5g4f7h5h3g3h4g6h6", "best"],
+  ["e6f6f5d6e7g5g4f7h5h3g3h4g6h6f8", "best"],
+  ["e6f6f5d6e7g5g4f7h5h3g3h4g6h6f8d8", "good"],
+  ["e6f6f5d6e7g5g4f7h5h3g3h4g6h6f8d8e8", "solid"],
+  ["e6f6f5d6e7g5g4f7h5h3g3h4g6h6f8d8e8g8", "best"]
+]);
 
 function initialBoard() {
   const board = Array(64).fill(EMPTY);
@@ -156,6 +197,22 @@ function analyzeMoves(board, color, depth = 3) {
     .sort((a, b) => b.score - a.score);
 }
 
+function openingBookMoves(sequence, board, color) {
+  const legal = new Set(legalMoves(board, color).map((move) => move.index));
+  const bookMoves = OPENING_BOOK.get(sequence) || [];
+  const ranked = bookMoves
+    .map((move, i) => ({
+      index: moveIndex(move),
+      move,
+      flips: 0,
+      score: Number((3 - i * 0.25).toFixed(2)),
+      source: "Zebra book"
+    }))
+    .filter((move) => legal.has(move.index));
+  if (!ranked.length) return null;
+  return ranked;
+}
+
 function chooseComputerMove(board, color, level) {
   const config = HUMAN_LEVELS[level] || HUMAN_LEVELS.casual;
   const ranked = analyzeMoves(board, color, config.depth);
@@ -185,12 +242,35 @@ function classifyLoss(loss) {
   return "blunder";
 }
 
+function scaledLocalLoss(loss, turn) {
+  if (turn <= 6) return loss / 5;
+  if (turn <= 11) return loss / 3;
+  return loss;
+}
+
+function labelLoss(loss, turn, source) {
+  if (source === "local") return classifyLoss(scaledLocalLoss(loss, turn));
+  return classifyLoss(loss);
+}
+
+function reportSource(report) {
+  const sources = new Set((report || []).filter((row) => typeof row.turn === "number").map((row) => row.source));
+  if (sources.has("Zebra")) return "Zebra";
+  if (sources.has("Zebra book")) return "Zebra book";
+  return "local";
+}
+
 function moveReport(history, finalCounts, zebraByTurn = null) {
   return history.map((entry, i) => {
-    const ranked = zebraByTurn?.[i] || analyzeMoves(entry.before, entry.color, 3);
+    const priorSequence = historySequence(history.slice(0, i));
+    const playedSequence = historySequence(history.slice(0, i + 1));
+    const book = openingBookMoves(priorSequence, entry.before, entry.color);
+    const ranked = zebraByTurn?.[i] || book || analyzeMoves(entry.before, entry.color, 3);
     const best = ranked[0];
     const played = ranked.find((item) => item.index === entry.index);
+    const source = zebraByTurn?.[i] ? "Zebra" : book ? "Zebra book" : "local";
     const loss = best && played ? Math.max(0, best.score - played.score) : 0;
+    const bookLabel = OPENING_PLAYED_LABELS.get(playedSequence);
     return {
       turn: i + 1,
       color: entry.color,
@@ -198,8 +278,8 @@ function moveReport(history, finalCounts, zebraByTurn = null) {
       bestMove: best ? moveName(best.index) : moveName(entry.index),
       score: played ? Math.max(-1, Math.min(1, played.score / 18)) : 0,
       loss,
-      label: classifyLoss(loss),
-      source: zebraByTurn?.[i] ? "Zebra" : "local"
+      label: bookLabel || labelLoss(loss, i + 1, source),
+      source
     };
   }).concat([{
     turn: "final",
@@ -307,6 +387,9 @@ function zebraAnalyzeSequence(sequence) {
 }
 
 async function analyzeRoomWithBestEngine(room) {
+  const sequence = historySequence(room.history);
+  const book = openingBookMoves(sequence, room.board, room.turn);
+  if (book?.length) return { source: "Zebra book", moves: book };
   const zebra = await zebraAnalyzeSequence(historySequence(room.history));
   if (zebra?.length) return { source: "Zebra", moves: zebra };
   return { source: "local", moves: analyzeMoves(room.board, room.turn, 3) };
@@ -317,8 +400,7 @@ async function buildZebraReport(room, finalCounts) {
   for (let i = 0; i < room.history.length; i += 1) {
     const partial = historySequence(room.history.slice(0, i));
     const moves = await zebraAnalyzeSequence(partial);
-    if (!moves?.length) return null;
-    zebraByTurn.push(moves);
+    zebraByTurn.push(moves?.length ? moves : null);
   }
   return moveReport(room.history, finalCounts, zebraByTurn);
 }
@@ -326,19 +408,19 @@ async function buildZebraReport(room, finalCounts) {
 async function reviewImportedGame({ moves, blackName, whiteName }) {
   const built = historyFromMoves(parseMoveSequence(moves));
   if (built.error) return { error: built.error };
-  const localReport = moveReport(built.history, built.counts);
+  const report = await buildZebraReport({ id: "import", history: built.history, board: built.board, status: "complete" }, built.counts) || moveReport(built.history, built.counts);
   const players = {
     black: String(blackName || "Black").slice(0, 24),
     white: String(whiteName || "White").slice(0, 24)
   };
   return {
-    source: "local",
+    source: reportSource(report),
     players,
     counts: built.counts,
     status: built.status,
     nextTurn: built.turn,
     moves: built.history.map((entry) => ({ color: entry.color, move: moveName(entry.index) })),
-    report: localReport
+    report
   };
 }
 
@@ -348,7 +430,7 @@ function refreshZebraReport(room) {
     const liveRoom = rooms.get(room.id);
     if (!liveRoom || liveRoom.status !== "complete" || !report) return;
     liveRoom.report = report;
-    liveRoom.analysisSource = "Zebra";
+    liveRoom.analysisSource = reportSource(report);
     broadcast(liveRoom);
   });
 }
