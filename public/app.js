@@ -24,6 +24,7 @@ let analyticsTurn = BLACK;
 let analyticsHistory = [];
 let analyticsTimer = null;
 let selectedGamePerson = { type: "me", name: null };
+let gamePanelNotice = "";
 const recordedRooms = new Set(JSON.parse(localStorage.getItem("othellitRecordedRooms") || "[]"));
 const pendingMessages = [];
 const clientId = getClientId();
@@ -958,11 +959,20 @@ function personRow(person, onlineSet) {
   button.textContent = games.length ? `Review Games (${games.length})` : "No games";
   button.disabled = !games.length;
   button.addEventListener("click", () => {
-    selectedGamePerson = { type: person.type, name: person.name };
-    renderFriends();
+    showPersonGames(person);
   });
   row.appendChild(button);
   return row;
+}
+
+function showPersonGames(person) {
+  selectedGamePerson = { type: person.type, name: person.name };
+  const count = gamesForPerson(person).length;
+  gamePanelNotice = person.type === "me"
+    ? `Showing ${count} saved game${count === 1 ? "" : "s"} for you. Choose one below to open it in Analytics.`
+    : `Showing ${count} saved game${count === 1 ? "" : "s"} involving ${person.name}. Choose one below to open it in Analytics.`;
+  renderFriends();
+  friendGamesEl.scrollIntoView({ block: "nearest", behavior: "smooth" });
 }
 
 function activePlayerName() {
@@ -1171,9 +1181,9 @@ function renderGameHistory() {
   const list = gamesForPerson(person);
   const personLabel = person.type === "me" ? "My Games" : `${person.name}'s Games`;
   friendGamesTitleEl.textContent = personLabel;
-  friendGamesHintEl.textContent = person.type === "me"
+  friendGamesHintEl.textContent = gamePanelNotice || (person.type === "me"
     ? "Only games played from your current Othellit account on this browser."
-    : `Only saved games involving ${person.name}.`;
+    : `Only saved games involving ${person.name}.`);
   if (!list.length) {
     friendGamesEl.className = "game-history empty";
     friendGamesEl.textContent = person.type === "me" ? "Your saved games will appear here." : `No saved games with ${person.name} yet.`;
@@ -1201,7 +1211,10 @@ function gameBelongsToPerson(game, person) {
   const name = normalizeName(person?.name);
   if (!name) return false;
   const participants = (game.players?.length ? game.players : [game.black, game.white]).map(normalizeName);
-  if (person.type === "me") return normalizeName(game.user) === name || (!game.user && participants.includes(name));
+  if (person.type === "me") {
+    const recordedUser = normalizeName(game.user);
+    return recordedUser === name || recordedUser === "guest" || (!recordedUser && participants.includes(name));
+  }
   return participants.includes(name);
 }
 
