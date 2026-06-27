@@ -6,7 +6,7 @@ const path = require("path");
 
 const PORT = process.env.PORT || 4173;
 const HOST = process.env.HOST || "0.0.0.0";
-const SERVER_VERSION = 6;
+const SERVER_VERSION = 7;
 const PUBLIC_DIR = path.join(__dirname, "public");
 const ZEBRA_DIR = "/Users/katiemirne/Downloads/zebra";
 const ZEBRA_PRACTICE = path.join(ZEBRA_DIR, "practice");
@@ -76,6 +76,12 @@ const OPENING_PLAYED_LABELS = new Map([
   ["e6f6f5d6e7g5g4f7h5h3g3h4g6h6f8d8e8", "solid"],
   ["e6f6f5d6e7g5g4f7h5h3g3h4g6h6f8d8e8g8", "best"]
 ]);
+
+const ZEBRA_REFERENCE_LINES = [
+  "e6 f4 e3 d6 c6 c5 d3 c3 b3 d7 b6 c4 f6 a6 c8 e8 c7 f5 a5 a4 e7 a2 a3 b5 a1 c2 a7 f8 d8 f3 c1 b8 b4 f7 d2 e2 g6 d1 f1 e1 b1 b2 g5 f2 g3 h3 g2 h1 h2 g1 h4 h5 g4 g7 h8 g8 a8 b7 h7 h6"
+];
+
+for (const line of ZEBRA_REFERENCE_LINES) registerZebraReferenceLine(line);
 
 function initialBoard() {
   const board = Array(64).fill(EMPTY);
@@ -195,6 +201,18 @@ function analyzeMoves(board, color, depth = 3) {
       };
     })
     .sort((a, b) => b.score - a.score);
+}
+
+function registerZebraReferenceLine(line) {
+  const moves = parseMoveSequence(line);
+  for (let i = 0; i < moves.length; i += 1) {
+    const prior = moves.slice(0, i).join("");
+    const played = moves.slice(0, i + 1).join("");
+    const existing = OPENING_BOOK.get(prior) || [];
+    const nextMove = moves[i];
+    OPENING_BOOK.set(prior, [nextMove, ...existing.filter((move) => move !== nextMove)]);
+    OPENING_PLAYED_LABELS.set(played, "best");
+  }
 }
 
 function openingBookMoves(sequence, board, color) {
