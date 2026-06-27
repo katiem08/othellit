@@ -1111,7 +1111,8 @@ h1 {
 }
 
 button.move-item,
-button.report-item {
+button.report-item,
+button.game-row {
   width: 100%;
   min-height: 36px;
   border: 0;
@@ -1122,6 +1123,7 @@ button.report-item {
 
 button.move-item:hover,
 button.report-item:hover,
+button.game-row:hover,
 button.move-item.active,
 button.report-item.active {
   filter: none;
@@ -1130,12 +1132,17 @@ button.report-item.active {
 }
 
 button.move-item span:first-child,
-button.report-item span:first-child {
+button.report-item span:first-child,
+button.game-row span:first-child {
   color: var(--text);
 }
 
 .game-row {
   min-height: 58px;
+}
+
+button.game-row {
+  cursor: pointer;
 }
 
 .game-row strong {

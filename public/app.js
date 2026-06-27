@@ -722,23 +722,29 @@ function clientLegalMoves(board, color) {
 }
 
 function applyAnalyticsMove(index) {
+  if (!commitAnalyticsMove(index)) return;
+  renderAnalyticsBoard();
+  queueImportedAnalysis();
+}
+
+function commitAnalyticsMove(index, options = {}) {
+  const { sound = true } = options;
   let legal = clientLegalMoves(analyticsBoardState, analyticsTurn);
   if (!legal.length && clientLegalMoves(analyticsBoardState, -analyticsTurn).length) {
     analyticsTurn = -analyticsTurn;
     legal = clientLegalMoves(analyticsBoardState, analyticsTurn);
   }
-  if (!legal.includes(index)) return;
+  if (!legal.includes(index)) return false;
   const flips = clientCaptures(analyticsBoardState, index, analyticsTurn);
   const next = analyticsBoardState.slice();
   next[index] = analyticsTurn;
   flips.forEach((flip) => { next[flip] = analyticsTurn; });
-  playMoveSound();
+  if (sound) playMoveSound();
   analyticsHistory.push({ color: analyticsTurn, index, move: squareName(index) });
   analyticsBoardState = next;
   analyticsTurn = -analyticsTurn;
   analyticsMoveTextEl.value = analyticsHistory.map((move) => move.move).join(" ");
-  renderAnalyticsBoard();
-  queueImportedAnalysis();
+  return true;
 }
 
 function renderAnalyticsBoard() {
@@ -792,10 +798,20 @@ function renderAnalyticsMoves() {
 
 function loadAnalyticsMoveText() {
   const moves = analyticsMoveTextEl.value.toLowerCase().match(/[a-h][1-8]/g) || [];
+  loadMovesIntoAnalytics(moves);
+}
+
+function loadMovesIntoAnalytics(moves, options = {}) {
+  const { blackName = "Black", whiteName = "White", summary = "Analyzing saved game..." } = options;
   resetAnalytics();
-  analyticsMoveTextEl.value = moves.join(" ");
-  moves.forEach((move) => applyAnalyticsMove(moveIndexClient(move)));
-  queueImportedAnalysis();
+  if (!moves.length) return;
+  analyticsBlackNameEl.value = blackName;
+  analyticsWhiteNameEl.value = whiteName;
+  analyticsSummaryEl.textContent = summary;
+  moves.forEach((move) => commitAnalyticsMove(moveIndexClient(move), { sound: false }));
+  analyticsMoveTextEl.value = analyticsHistory.map((move) => move.move).join(" ");
+  renderAnalyticsBoard();
+  requestImportedAnalysis();
 }
 
 function moveIndexClient(move) {
@@ -1082,7 +1098,9 @@ function maybeRecordGame() {
     black,
     white,
     score: `${currentRoom.counts.black}-${currentRoom.counts.white}`,
-    result: currentRoom.winner === 0 ? "Draw" : `${currentRoom.winner === BLACK ? black : white} won`
+    result: currentRoom.winner === 0 ? "Draw" : `${currentRoom.winner === BLACK ? black : white} won`,
+    moves: (currentRoom.history || []).map((move) => move.move),
+    source: currentRoom.analysisSource || currentRoom.report?.[0]?.source || "local"
   };
   recordedRooms.add(currentRoom.id);
   localStorage.setItem("othellitRecordedRooms", JSON.stringify([...recordedRooms]));
@@ -1100,11 +1118,23 @@ function renderGameHistory() {
   friendGamesEl.className = "game-history";
   friendGamesEl.innerHTML = "";
   list.forEach((game) => {
-    const row = document.createElement("div");
+    const row = document.createElement(game.moves?.length ? "button" : "div");
     row.className = "game-row";
+    if (game.moves?.length) row.type = "button";
     const when = new Date(game.date).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-    row.innerHTML = `<span><strong>${game.mode === "computer" ? "Computer" : "Friend"} game</strong><br><small>${game.black} vs ${game.white} | ${game.score} | ${when}</small></span><span class="tag">${game.result}</span>`;
+    const reviewLabel = game.moves?.length ? "Review" : "Summary";
+    row.innerHTML = `<span><strong>${game.mode === "computer" ? "Computer" : "Friend"} game</strong><br><small>${game.black} vs ${game.white} | ${game.score} | ${game.result} | ${when}</small></span><span class="tag">${reviewLabel}</span>`;
+    if (game.moves?.length) row.addEventListener("click", () => openSavedGameReview(game));
     friendGamesEl.appendChild(row);
+  });
+}
+
+function openSavedGameReview(game) {
+  showScreen("analytics");
+  loadMovesIntoAnalytics(game.moves, {
+    blackName: game.black || "Black",
+    whiteName: game.white || "White",
+    summary: `Loading ${game.black || "Black"} vs ${game.white || "White"}...`
   });
 }
 
