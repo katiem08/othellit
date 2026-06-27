@@ -16,6 +16,9 @@ let latestAnalysisSource = "local";
 let lobbyOnlinePlayers = [];
 let boardView = { mode: "live", ply: null, bestIndex: null, playedIndex: null };
 let lastRoomHistoryLength = 0;
+let animatedFlipIndexes = new Set();
+let audioContext = null;
+let pendingLocalSoundIndex = null;
 let analyticsBoardState = [];
 let analyticsTurn = BLACK;
 let analyticsHistory = [];
@@ -144,6 +147,12 @@ function connect() {
     }
     if (data.type === "room") {
       const nextHistoryLength = data.room.history?.length || 0;
+      const previousBoard = currentRoom?.id === data.room.id ? currentRoom.board : null;
+      animatedFlipIndexes = changedLiveSquares(previousBoard, data.room.board, nextHistoryLength);
+      const latestMove = data.room.history?.at(-1);
+      const alreadyClicked = latestMove?.index === pendingLocalSoundIndex && latestMove?.color === myColor;
+      if (animatedFlipIndexes.size && !alreadyClicked) playMoveSound();
+      if (latestMove?.index === pendingLocalSoundIndex) pendingLocalSoundIndex = null;
       if (currentRoom?.id !== data.room.id || (data.room.status === "playing" && nextHistoryLength !== lastRoomHistoryLength)) {
         boardView = { mode: "live", ply: null, bestIndex: null, playedIndex: null };
       }
@@ -168,6 +177,53 @@ function connect() {
     renderConnectionStatus("Reconnecting...");
     setTimeout(connect, 1000);
   });
+}
+
+function changedLiveSquares(previousBoard, nextBoard, nextHistoryLength) {
+  if (!previousBoard || !nextBoard || nextHistoryLength <= lastRoomHistoryLength) return new Set();
+  const changed = new Set();
+  nextBoard.forEach((piece, index) => {
+    if (piece !== previousBoard[index]) changed.add(index);
+  });
+  return changed;
+}
+
+function ensureAudioContext() {
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) return null;
+  if (!audioContext) audioContext = new AudioContextClass();
+  if (audioContext.state === "suspended") {
+    audioContext.resume().catch(() => {});
+  }
+  return audioContext;
+}
+
+function playMoveSound() {
+  const ctx = ensureAudioContext();
+  if (!ctx) return;
+  const now = ctx.currentTime;
+  const gain = ctx.createGain();
+  const click = ctx.createOscillator();
+  const tick = ctx.createOscillator();
+
+  click.type = "triangle";
+  click.frequency.setValueAtTime(520, now);
+  click.frequency.exponentialRampToValueAtTime(230, now + 0.08);
+  tick.type = "sine";
+  tick.frequency.setValueAtTime(920, now);
+  tick.frequency.exponentialRampToValueAtTime(460, now + 0.05);
+
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.exponentialRampToValueAtTime(0.16, now + 0.01);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.11);
+
+  click.connect(gain);
+  tick.connect(gain);
+  gain.connect(ctx.destination);
+  click.start(now);
+  tick.start(now + 0.012);
+  click.stop(now + 0.12);
+  tick.stop(now + 0.09);
 }
 
 function renderConnectionStatus(fallback = null) {
@@ -370,8 +426,10 @@ function renderBoard() {
   const good = liveView ? latestAnalysis[1]?.index : null;
   const liveLastIndex = liveView ? currentRoom?.history?.at(-1)?.index : null;
   const showBestHighlight = boardView.mode === "review" || (analysisToggleEl.checked && showEngineHints);
+  const flipIndexes = liveView ? animatedFlipIndexes : new Set();
   board.forEach((piece, index) => {
     const cell = cellEl(index, piece);
+    if (flipIndexes.has(index)) cell.classList.add("flipped");
     if (index === (replay?.lastIndex ?? liveLastIndex)) cell.classList.add("last-move");
     if (index === boardView.playedIndex) cell.classList.add("played-review");
     if (legal.includes(index) && moveOptionsToggleEl.checked && canMove) {
@@ -379,12 +437,22 @@ function renderBoard() {
     }
     if (legal.includes(index) && canMove) {
       cell.classList.add("playable");
-      cell.addEventListener("click", () => send({ type: "move", index }));
+      cell.addEventListener("click", () => {
+        pendingLocalSoundIndex = index;
+        playMoveSound();
+        send({ type: "move", index });
+      });
     }
     if (showBestHighlight && index === best) cell.classList.add("best");
     if (analysisToggleEl.checked && showEngineHints && index === good) cell.classList.add("good");
     boardEl.appendChild(cell);
   });
+  if (liveView && animatedFlipIndexes.size) {
+    const renderedSet = animatedFlipIndexes;
+    setTimeout(() => {
+      if (animatedFlipIndexes === renderedSet) animatedFlipIndexes = new Set();
+    }, 560);
+  }
 }
 
 function replayBoardView() {
@@ -441,7 +509,7 @@ function renderHistory() {
   });
   const liveButton = document.createElement("button");
   liveButton.type = "button";
-  liveButton.className = `move-item ${boardView.mode === "live" ? "active" : ""}`;
+  liveButton.className = "move-item live-position";
   liveButton.innerHTML = "<span>Live position</span><span class=\"tag\">Now</span>";
   liveButton.addEventListener("click", showLiveBoard);
   historyEl.appendChild(liveButton);
@@ -612,6 +680,7 @@ function applyAnalyticsMove(index) {
   const next = analyticsBoardState.slice();
   next[index] = analyticsTurn;
   flips.forEach((flip) => { next[flip] = analyticsTurn; });
+  playMoveSound();
   analyticsHistory.push({ color: analyticsTurn, index, move: squareName(index) });
   analyticsBoardState = next;
   analyticsTurn = -analyticsTurn;
