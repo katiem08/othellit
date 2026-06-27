@@ -110,17 +110,16 @@
             <span><strong>Live</strong> friend rooms</span>
           </div>
         </div>
-        <div class="home-board" aria-hidden="true">
+        <div class="home-board">
           <div class="home-board-card">
             <div class="home-board-top">
-              <span>Opening setup</span>
-              <strong>Ready to play</strong>
+              <span>Opening move</span>
+              <strong id="homeBoardCue">Tap d3 to play</strong>
             </div>
-            <div class="mini-board">
-              <span></span><span></span><span></span><span></span>
+            <div id="homeMiniBoard" class="mini-board" aria-label="Start Othellit from an opening move" role="button" tabindex="0">
             </div>
             <div class="home-board-bottom">
-              <span class="home-chip">d3</span>
+              <span class="home-chip active">d3</span>
               <span class="home-chip">c4</span>
               <span class="home-chip">f5</span>
               <span class="home-chip">e6</span>

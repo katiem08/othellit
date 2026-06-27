@@ -31,6 +31,9 @@ previewBoard[27] = WHITE;
 previewBoard[28] = BLACK;
 previewBoard[35] = BLACK;
 previewBoard[36] = WHITE;
+const homeOpeningBoard = initialClientBoard();
+let homeOpeningPlayed = false;
+let homeOpeningTimer = null;
 
 const boardEl = document.querySelector("#board");
 const statusEl = document.querySelector("#gameStatus");
@@ -100,6 +103,8 @@ const analyticsBlackLabelEl = document.querySelector("#analyticsBlackLabel");
 const analyticsWhiteLabelEl = document.querySelector("#analyticsWhiteLabel");
 const analyticsBlackScoreEl = document.querySelector("#analyticsBlackScore");
 const analyticsWhiteScoreEl = document.querySelector("#analyticsWhiteScore");
+const homeMiniBoardEl = document.querySelector("#homeMiniBoard");
+const homeBoardCueEl = document.querySelector("#homeBoardCue");
 
 renderAccount();
 
@@ -403,6 +408,49 @@ function showScreen(screen) {
     renderGameHistory();
   }
   if (screen === "analytics") renderAnalyticsBoard();
+  if (screen === "home") resetHomeOpeningPreview();
+}
+
+function resetHomeOpeningPreview() {
+  homeOpeningPlayed = false;
+  clearTimeout(homeOpeningTimer);
+  homeBoardCueEl.textContent = "Tap d3 to play";
+  renderHomeOpeningPreview();
+}
+
+function renderHomeOpeningPreview() {
+  homeMiniBoardEl.innerHTML = "";
+  const board = homeOpeningBoard.slice();
+  if (homeOpeningPlayed) {
+    board[19] = BLACK;
+    board[27] = BLACK;
+  }
+  board.forEach((piece, index) => {
+    const cell = document.createElement("span");
+    cell.className = "mini-cell";
+    cell.setAttribute("aria-label", squareName(index));
+    if (index === 19 && !homeOpeningPlayed) {
+      cell.classList.add("mini-playable");
+      cell.appendChild(document.createElement("i"));
+    }
+    if ((index === 19 || index === 27) && homeOpeningPlayed) cell.classList.add("flipped");
+    if (piece !== 0) {
+      const disc = document.createElement("span");
+      disc.className = `piece ${piece === BLACK ? "black" : "white"}`;
+      cell.appendChild(disc);
+    }
+    homeMiniBoardEl.appendChild(cell);
+  });
+}
+
+function playHomeOpeningMove() {
+  if (homeOpeningPlayed) return;
+  homeOpeningPlayed = true;
+  homeBoardCueEl.textContent = "Nice. Let's play.";
+  playMoveSound();
+  renderHomeOpeningPreview();
+  clearTimeout(homeOpeningTimer);
+  homeOpeningTimer = setTimeout(() => showScreen("game"), 650);
 }
 
 function renderBoard() {
@@ -1133,6 +1181,12 @@ document.querySelector("#addFriendLarge").addEventListener("click", () => {
 document.querySelector("#playNow").addEventListener("click", () => showScreen("game"));
 document.querySelector("#homeFriends").addEventListener("click", () => showScreen("friends"));
 document.querySelector("#brandHome").addEventListener("click", () => showScreen("home"));
+homeMiniBoardEl.addEventListener("click", playHomeOpeningMove);
+homeMiniBoardEl.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" && event.key !== " ") return;
+  event.preventDefault();
+  playHomeOpeningMove();
+});
 gameTabEl.addEventListener("click", () => showScreen("game"));
 friendsTabEl.addEventListener("click", () => showScreen("friends"));
 analyticsTabEl.addEventListener("click", () => showScreen("analytics"));
