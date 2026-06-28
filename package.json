@@ -4,6 +4,7 @@
   "private": true,
   "description": "Othellit online Othello with computer play, friend rooms, and move analytics.",
   "scripts": {
+    "postinstall": "node scripts/install-egaroucid.js",
     "start": "node server.js",
     "train:bots": "node scripts/train-agent.js"
   },

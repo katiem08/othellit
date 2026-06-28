@@ -1,6 +1,6 @@
 const BLACK = 1;
 const WHITE = -1;
-const EXPECTED_SERVER_VERSION = 11;
+const EXPECTED_SERVER_VERSION = 12;
 const LIVE_ANALYSIS_DELAY_MS = 180;
 let socket;
 let myId = "";

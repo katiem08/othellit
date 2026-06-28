@@ -6,11 +6,16 @@ const path = require("path");
 
 const PORT = process.env.PORT || 4173;
 const HOST = process.env.HOST || "0.0.0.0";
-const SERVER_VERSION = 11;
+const SERVER_VERSION = 12;
 const PUBLIC_DIR = path.join(__dirname, "public");
 const ZEBRA_DIR = "/Users/katiemirne/Downloads/zebra";
 const ZEBRA_PRACTICE = path.join(ZEBRA_DIR, "practice");
 const ZEBRA_BOOK = path.join(ZEBRA_DIR, "book.bin");
+const EGAROUCID_DIR = process.env.EGAROUCID_DIR || path.join(__dirname, "vendor", "egaroucid");
+const EGAROUCID_BIN = process.env.EGAROUCID_BIN || path.join(EGAROUCID_DIR, "Egaroucid_for_Console.out");
+const EGAROUCID_TIMEOUT_MS = Math.max(1000, Number(process.env.EGAROUCID_TIMEOUT_MS || "6000"));
+const EGAROUCID_ANALYSIS_LEVEL = Math.max(1, Number(process.env.EGAROUCID_ANALYSIS_LEVEL || "10"));
+const EGAROUCID_EXPERT_LEVEL = Math.max(1, Number(process.env.EGAROUCID_EXPERT_LEVEL || "12"));
 const UNJOINED_ROOM_TTL_MS = 5 * 60 * 1000;
 const PLAYER_AWAY_TTL_MS = 30 * 60 * 1000;
 const ROOM_CLEANUP_INTERVAL_MS = 30 * 1000;
@@ -37,6 +42,8 @@ const WEIGHTS = [
 const sockets = new Map();
 const rooms = new Map();
 const zebraCache = new Map();
+const egaroucidCache = new Map();
+const egaroucidEngines = new Map();
 const OPENING_BOOK = new Map([
   ["", ["e6", "f5", "d3", "c4"]],
   ["e6", ["f6", "f4"]],
@@ -258,6 +265,10 @@ async function chooseComputerMove(room, color) {
   const sequence = historySequence(room.history || []);
   const book = config.book ? openingBookMoves(sequence, board, color) : null;
   if (book?.length && Math.random() < config.bookChance) return pickRankedMove(book, config);
+  if (level === "expert") {
+    const egaroucid = await egaroucidAnalyzeSequence(sequence, EGAROUCID_EXPERT_LEVEL);
+    if (egaroucid?.length) return pickRankedMove(egaroucid, config);
+  }
   const zebra = config.zebra ? await zebraAnalyzeSequence(sequence) : null;
   if (zebra?.length) return pickRankedMove(zebra, config);
   const empties = board.filter((cell) => cell === EMPTY).length;
@@ -297,6 +308,7 @@ function labelLoss(loss, turn, source) {
 
 function reportSource(report) {
   const sources = new Set((report || []).filter((row) => typeof row.turn === "number").map((row) => row.source));
+  if (sources.has("Egaroucid")) return "Egaroucid";
   if (sources.has("Zebra")) return "Zebra";
   if (sources.has("Zebra book")) return "Zebra book";
   return "local";
@@ -310,7 +322,7 @@ function moveReport(history, finalCounts, zebraByTurn = null) {
     const ranked = zebraByTurn?.[i] || book || analyzeMoves(entry.before, entry.color, 3);
     const best = ranked[0];
     const played = ranked.find((item) => item.index === entry.index);
-    const source = zebraByTurn?.[i] ? "Zebra" : book ? "Zebra book" : "local";
+    const source = zebraByTurn?.[i]?.[0]?.source || (book ? "Zebra book" : "local");
     const loss = best && played ? Math.max(0, best.score - played.score) : 0;
     const bookLabel = OPENING_PLAYED_LABELS.get(playedSequence);
     return {
@@ -382,6 +394,124 @@ function parseZebraScores(output) {
   }).filter((move) => move && move.index >= 0).sort((a, b) => b.score - a.score);
 }
 
+class EgaroucidEngine {
+  constructor(level) {
+    this.level = level;
+    this.process = null;
+    this.buffer = "";
+    this.waiter = null;
+    this.queue = Promise.resolve();
+    this.available = fs.existsSync(EGAROUCID_BIN)
+      && fs.existsSync(path.join(EGAROUCID_DIR, "resources", "book.egbk3"))
+      && fs.existsSync(path.join(EGAROUCID_DIR, "resources", "eval.egev2"));
+  }
+
+  async start() {
+    if (!this.available) return false;
+    if (this.process && !this.process.killed) return true;
+    this.buffer = "";
+    this.process = spawn(EGAROUCID_BIN, ["-q", "-noboard", "-l", String(this.level), "-t", "1"], {
+      cwd: EGAROUCID_DIR,
+      stdio: ["pipe", "pipe", "pipe"]
+    });
+    this.process.stdout.on("data", (chunk) => this.onData(chunk));
+    this.process.stderr.on("data", (chunk) => this.onData(chunk));
+    this.process.on("close", () => {
+      this.process = null;
+      this.waiter = null;
+    });
+    this.process.on("error", () => {
+      this.process = null;
+      this.waiter = null;
+    });
+    await this.waitForPrompt();
+    return true;
+  }
+
+  onData(chunk) {
+    this.buffer += chunk.toString("utf8");
+    if (this.buffer.length > 160000) this.buffer = this.buffer.slice(-160000);
+    if (this.waiter && this.buffer.endsWith("> ")) {
+      const waiter = this.waiter;
+      this.waiter = null;
+      waiter.resolve(this.buffer);
+    }
+  }
+
+  waitForPrompt() {
+    if (this.buffer.endsWith("> ")) return Promise.resolve(this.buffer);
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.waiter = null;
+        reject(new Error("Egaroucid timeout"));
+      }, EGAROUCID_TIMEOUT_MS);
+      this.waiter = {
+        resolve: (text) => {
+          clearTimeout(timer);
+          resolve(text);
+        }
+      };
+    });
+  }
+
+  async command(text) {
+    if (!this.process || this.process.killed) await this.start();
+    if (!this.process) return "";
+    this.buffer = "";
+    this.process.stdin.write(`${text}\n`);
+    return this.waitForPrompt();
+  }
+
+  rank(sequence) {
+    this.queue = this.queue.then(() => this.rankNow(sequence)).catch(() => null);
+    return this.queue;
+  }
+
+  async rankNow(sequence) {
+    if (!await this.start()) return null;
+    await this.command("init");
+    const moves = String(sequence || "").match(/.{1,2}/g) || [];
+    if (moves.length) await this.command(`play ${moves.join("")}`);
+    const output = await this.command("hint 32");
+    const ranked = parseEgaroucidHint(output);
+    return ranked.length ? ranked : null;
+  }
+}
+
+function getEgaroucidEngine(level) {
+  const normalized = Math.max(1, Math.min(60, Number(level) || EGAROUCID_ANALYSIS_LEVEL));
+  if (!egaroucidEngines.has(normalized)) egaroucidEngines.set(normalized, new EgaroucidEngine(normalized));
+  return egaroucidEngines.get(normalized);
+}
+
+function parseEgaroucidHint(output) {
+  return String(output || "")
+    .split("\n")
+    .map((line) => line.split("|").map((part) => part.trim()))
+    .filter((parts) => parts.length >= 5 && /^[a-h][1-8]$/i.test(parts[3]))
+    .map((parts) => ({
+      index: moveIndex(parts[3].toLowerCase()),
+      move: parts[3].toLowerCase(),
+      score: Number(parts[4].replace("+", "")),
+      source: "Egaroucid"
+    }))
+    .filter((move) => move.index >= 0 && Number.isFinite(move.score))
+    .sort((a, b) => b.score - a.score);
+}
+
+async function egaroucidAnalyzeSequence(sequence, level = EGAROUCID_ANALYSIS_LEVEL) {
+  const cacheKey = `${level}:${sequence || ""}`;
+  if (egaroucidCache.has(cacheKey)) return egaroucidCache.get(cacheKey);
+  try {
+    const ranked = await getEgaroucidEngine(level).rank(sequence || "");
+    egaroucidCache.set(cacheKey, ranked);
+    return ranked;
+  } catch {
+    egaroucidCache.set(cacheKey, null);
+    return null;
+  }
+}
+
 function zebraAnalyzeSequence(sequence) {
   return new Promise((resolve) => {
     const cacheKey = sequence || "";
@@ -443,6 +573,8 @@ async function analyzePositionWithBestEngine(history, board, turn, level = "casu
   const sequence = historySequence(history);
   const book = openingBookMoves(sequence, board, turn);
   if (book?.length) return { source: "Zebra book", moves: book };
+  const egaroucid = await egaroucidAnalyzeSequence(sequence, EGAROUCID_ANALYSIS_LEVEL);
+  if (egaroucid?.length) return { source: "Egaroucid", moves: egaroucid };
   const zebra = await zebraAnalyzeSequence(sequence);
   if (zebra?.length) return { source: "Zebra", moves: zebra };
   return { source: "local", moves: analyzeMoves(board, turn, config.depth) };
@@ -463,7 +595,7 @@ async function buildZebraReport(room, finalCounts) {
   const zebraByTurn = [];
   for (let i = 0; i < room.history.length; i += 1) {
     const partial = historySequence(room.history.slice(0, i));
-    const moves = await zebraAnalyzeSequence(partial);
+    const moves = await egaroucidAnalyzeSequence(partial, EGAROUCID_ANALYSIS_LEVEL) || await zebraAnalyzeSequence(partial);
     zebraByTurn.push(moves?.length ? moves : null);
   }
   return moveReport(room.history, finalCounts, zebraByTurn);
