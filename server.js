@@ -6,7 +6,7 @@ const path = require("path");
 
 const PORT = process.env.PORT || 4173;
 const HOST = process.env.HOST || "0.0.0.0";
-const SERVER_VERSION = 10;
+const SERVER_VERSION = 11;
 const PUBLIC_DIR = path.join(__dirname, "public");
 const ZEBRA_DIR = "/Users/katiemirne/Downloads/zebra";
 const ZEBRA_PRACTICE = path.join(ZEBRA_DIR, "practice");
@@ -14,15 +14,15 @@ const ZEBRA_BOOK = path.join(ZEBRA_DIR, "book.bin");
 const UNJOINED_ROOM_TTL_MS = 5 * 60 * 1000;
 const PLAYER_AWAY_TTL_MS = 30 * 60 * 1000;
 const ROOM_CLEANUP_INTERVAL_MS = 30 * 1000;
-const ZEBRA_TIMEOUT_MS = 1800;
+const ZEBRA_TIMEOUT_MS = 900;
 const EMPTY = 0;
 const BLACK = 1;
 const WHITE = -1;
 const HUMAN_LEVELS = {
   easy: { depth: 2, noise: 14, topChoices: 5, book: true, bookChance: 0.45, zebra: false, mistakeRate: 0.14, endgame: 6 },
   casual: { depth: 3, noise: 4, topChoices: 3, book: true, bookChance: 0.75, zebra: false, mistakeRate: 0.055, endgame: 8 },
-  club: { depth: 5, noise: 0.7, topChoices: 2, book: true, bookChance: 0.95, zebra: false, mistakeRate: 0.012, endgame: 10 },
-  expert: { depth: 6, noise: 0, topChoices: 1, book: true, bookChance: 1, zebra: true, mistakeRate: 0, endgame: 10 }
+  club: { depth: 4, noise: 0.7, topChoices: 2, book: true, bookChance: 0.95, zebra: false, mistakeRate: 0.012, endgame: 8 },
+  expert: { depth: 5, noise: 0, topChoices: 1, book: true, bookChance: 1, zebra: true, mistakeRate: 0, endgame: 8 }
 };
 const WEIGHTS = [
   120, -22, 20, 8, 8, 20, -22, 120,
@@ -253,6 +253,7 @@ function pickRankedMove(ranked, config) {
 
 async function chooseComputerMove(room, color) {
   const { board, level } = room;
+  if (!legalMoves(board, color).length) return null;
   const config = HUMAN_LEVELS[level] || HUMAN_LEVELS.casual;
   const sequence = historySequence(room.history || []);
   const book = config.book ? openingBookMoves(sequence, board, color) : null;
@@ -449,6 +450,13 @@ async function analyzePositionWithBestEngine(history, board, turn, level = "casu
 
 async function analyzeRoomWithBestEngine(room) {
   return analyzePositionWithBestEngine(room.history, room.board, room.turn, room.level);
+}
+
+function analyzeRoomQuickly(room) {
+  const sequence = historySequence(room.history);
+  const book = openingBookMoves(sequence, room.board, room.turn);
+  if (book?.length) return { source: "Zebra book", moves: book };
+  return { source: "fast local", moves: analyzeMoves(room.board, room.turn, room.level === "expert" ? 3 : 2) };
 }
 
 async function buildZebraReport(room, finalCounts) {
@@ -738,10 +746,15 @@ function handleMessage(socket, message) {
   if (data.type === "analyze") {
     const room = rooms.get(socket.roomId);
     if (!room) return;
-    analyzeRoomWithBestEngine(room).then(({ source, moves }) => {
-      const ranked = moves.slice(0, 8);
-      sendFrame(socket, JSON.stringify({ type: "analysis", source, color: room.turn, moves: ranked.map((m) => ({ ...m, move: m.move || moveName(m.index) })) }));
-    });
+    const { source, moves } = analyzeRoomQuickly(room);
+    const ranked = moves.slice(0, 8);
+    sendFrame(socket, JSON.stringify({
+      type: "analysis",
+      source,
+      color: room.turn,
+      context: data.context || "",
+      moves: ranked.map((m) => ({ ...m, move: m.move || moveName(m.index) }))
+    }));
   }
   if (data.type === "analyze-sequence") {
     const built = historyFromMoves(parseMoveSequence(data.moves));

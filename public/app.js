@@ -1,6 +1,7 @@
 const BLACK = 1;
 const WHITE = -1;
-const EXPECTED_SERVER_VERSION = 10;
+const EXPECTED_SERVER_VERSION = 11;
+const LIVE_ANALYSIS_DELAY_MS = 180;
 let socket;
 let myId = "";
 let myColor = 0;
@@ -27,6 +28,7 @@ let analyticsBoardState = [];
 let analyticsTurn = BLACK;
 let analyticsHistory = [];
 let analyticsTimer = null;
+let liveAnalysisTimer = null;
 let analyticsPlayedIndex = null;
 let selectedGamePerson = { type: "me", name: null };
 let gamePanelNotice = "";
@@ -186,6 +188,9 @@ function connect() {
       } else if (data.context === "analytics") {
         analyticsPositionAnalysis = data.moves;
         analyticsPositionAnalysisSource = data.source || "local";
+      } else if (data.context === liveAnalysisContext()) {
+        latestAnalysis = data.moves;
+        latestAnalysisSource = data.source || "local";
       } else if (!data.context) {
         latestAnalysis = data.moves;
         latestAnalysisSource = data.source || "local";
@@ -651,7 +656,15 @@ function renderAnalysis() {
   const viewedSource = boardView.mode === "after" ? positionAnalysisSource : latestAnalysisSource;
   if (!viewedAnalysis.length) {
     analysisEl.className = "analysis empty";
-    analysisEl.textContent = boardView.mode === "after" ? "Analyzing this past position..." : "No legal moves in this position.";
+    if (boardView.mode === "after") {
+      analysisEl.textContent = "Analyzing this past position...";
+    } else if (currentRoom?.mode === "computer" && currentRoom.status === "playing" && currentRoom.turn !== myColor) {
+      analysisEl.textContent = "Waiting for the computer to move.";
+    } else if (currentRoom?.status === "playing") {
+      analysisEl.textContent = "Finding your best moves...";
+    } else {
+      analysisEl.textContent = "No legal moves in this position.";
+    }
     return;
   }
   analysisEl.className = "analysis";
@@ -1328,11 +1341,22 @@ function openSavedGameReview(game) {
 }
 
 function requestAnalysis() {
+  clearTimeout(liveAnalysisTimer);
   if (currentRoom && boardView.mode === "after") {
     send({ type: "analyze-sequence", moves: movesThroughPly(boardView.ply || 0), context: boardAnalysisContext() });
     return;
   }
-  if (analysisToggleEl.checked && currentRoom?.status !== "complete" && currentRoom?.mode === "computer") send({ type: "analyze" });
+  if (!analysisToggleEl.checked || currentRoom?.status !== "playing" || currentRoom?.mode !== "computer") return;
+  if (currentRoom.turn !== myColor) return;
+  const context = liveAnalysisContext();
+  liveAnalysisTimer = setTimeout(() => {
+    if (context === liveAnalysisContext()) send({ type: "analyze", context });
+  }, LIVE_ANALYSIS_DELAY_MS);
+}
+
+function liveAnalysisContext() {
+  if (!currentRoom || boardView.mode !== "live") return "";
+  return `live-${currentRoom.id}-${currentRoom.history?.length || 0}-${currentRoom.turn}`;
 }
 
 function resignCurrentGame() {
