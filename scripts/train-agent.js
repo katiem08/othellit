@@ -36,6 +36,7 @@ const gamesPerMatchup = Math.max(1, Number(arg("games", "8")));
 const teacherDepth = Math.max(1, Number(arg("teacher-depth", "5")));
 const teacherKind = String(arg("teacher", "local")).toLowerCase();
 const egaroucidLevel = Math.max(0, Number(arg("egaroucid-level", "15")));
+const egaroucidTimeoutMs = Math.max(5000, Number(arg("egaroucid-timeout-ms", "120000")));
 const egaroucidPath = arg("egaroucid-path", path.join(__dirname, "..", "vendor", "egaroucid", "Egaroucid_for_Console.out"));
 const levels = String(arg("levels", Object.keys(LEVELS).join(",")))
   .split(",")
@@ -206,9 +207,10 @@ class LocalTeacher {
 }
 
 class EgaroucidTeacher {
-  constructor(executable, level) {
+  constructor(executable, level, timeoutMs) {
     this.executable = executable;
     this.level = level;
+    this.timeoutMs = timeoutMs;
     this.name = `Egaroucid level ${level}`;
     this.process = null;
     this.buffer = "";
@@ -246,8 +248,8 @@ class EgaroucidTeacher {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.waiter = null;
-        reject(new Error("Egaroucid did not answer in time"));
-      }, 20000);
+        reject(new Error(`Egaroucid did not answer within ${Math.round(this.timeoutMs / 1000)} seconds. Try a lower --egaroucid-level, fewer --games, or a larger --egaroucid-timeout-ms.`));
+      }, this.timeoutMs);
       this.waiter = {
         resolve: (text) => {
           clearTimeout(timer);
@@ -289,7 +291,7 @@ class EgaroucidTeacher {
 
 async function createTeacher() {
   if (teacherKind === "egaroucid") {
-    const teacher = new EgaroucidTeacher(egaroucidPath, egaroucidLevel);
+    const teacher = new EgaroucidTeacher(egaroucidPath, egaroucidLevel, egaroucidTimeoutMs);
     await teacher.start();
     return teacher;
   }
