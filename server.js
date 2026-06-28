@@ -753,7 +753,7 @@ function handleMessage(socket, message) {
   }
   if (data.type === "analyze-import") {
     reviewImportedGame(data).then((review) => {
-      sendFrame(socket, JSON.stringify({ type: "import-analysis", review }));
+      sendFrame(socket, JSON.stringify({ type: "import-analysis", review, moves: parseMoveSequence(data.moves).join(" ") }));
     });
   }
   if (data.type === "new-computer") joinRoom(socket, { roomId: crypto.randomBytes(3).toString("hex"), mode: "computer", level: data.level, preferredColor: data.preferredColor, humanColor: data.humanColor, name: data.name, clientId: data.clientId });

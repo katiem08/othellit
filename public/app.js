@@ -107,6 +107,7 @@ const analyticsWhiteNameEl = document.querySelector("#analyticsWhiteName");
 const analyticsMoveTextEl = document.querySelector("#analyticsMoveText");
 const analyticsMovesEl = document.querySelector("#analyticsMoves");
 const analyticsSummaryEl = document.querySelector("#analyticsSummary");
+const analyticsBestNowEl = document.querySelector("#analyticsBestNow");
 const analyticsReportEl = document.querySelector("#analyticsReport");
 const analyticsBlackLabelEl = document.querySelector("#analyticsBlackLabel");
 const analyticsWhiteLabelEl = document.querySelector("#analyticsWhiteLabel");
@@ -193,7 +194,7 @@ function connect() {
       renderBoard();
       renderAnalyticsBoard();
     }
-    if (data.type === "import-analysis") renderImportedAnalysis(data.review);
+    if (data.type === "import-analysis") renderImportedAnalysis(data.review, data.moves);
     if (data.type === "lobby") renderLobby(data);
   });
   socket.addEventListener("close", () => {
@@ -706,9 +707,11 @@ function resetAnalytics() {
   analyticsTurn = BLACK;
   analyticsHistory = [];
   analyticsPositionAnalysis = [];
+  analyticsPositionAnalysisSource = "local";
   analyticsPlayedIndex = null;
   analyticsMoveTextEl.value = "";
   analyticsSummaryEl.textContent = "Add moves to begin.";
+  renderAnalyticsBestNow();
   analyticsReportEl.className = "report empty";
   analyticsReportEl.textContent = "Each clicked move will appear here with best move, loss, and label.";
   renderAnalyticsBoard();
@@ -822,7 +825,40 @@ function renderAnalyticsBoard() {
     }
     analyticsBoardEl.appendChild(cell);
   });
+  renderAnalyticsBestNow();
   renderAnalyticsMoves();
+}
+
+function renderAnalyticsBestNow() {
+  if (!analyticsBestNowEl) return;
+  const legal = clientLegalMoves(analyticsBoardState, analyticsTurn);
+  const bestMoves = analyticsPositionAnalysis
+    .filter((move) => typeof move.index === "number")
+    .slice(0, 4);
+  if (!analyticsHistory.length && !bestMoves.length) {
+    analyticsBestNowEl.className = "current-best empty";
+    analyticsBestNowEl.textContent = "Click a move to see the best move for the current position.";
+    return;
+  }
+  if (!legal.length) {
+    analyticsBestNowEl.className = "current-best";
+    analyticsBestNowEl.innerHTML = "<strong>Current position</strong><span>Game over or no engine move available.</span>";
+    return;
+  }
+  if (!bestMoves.length) {
+    analyticsBestNowEl.className = "current-best empty";
+    analyticsBestNowEl.innerHTML = `<strong>${colorName(analyticsTurn)} to move</strong><span>Finding best move...</span>`;
+    return;
+  }
+  const alternatives = bestMoves
+    .map((move, index) => {
+      const label = index === 0 ? "Best" : "Alt";
+      const score = Number.isFinite(Number(move.score)) ? ` ${Number(move.score).toFixed(2)}` : "";
+      return `<span class="best-chip">${label}: ${squareName(move.index)}${score}</span>`;
+    })
+    .join("");
+  analyticsBestNowEl.className = "current-best";
+  analyticsBestNowEl.innerHTML = `<strong>${colorName(analyticsTurn)} to move</strong><div>${alternatives}</div><small>Source: ${analyticsPositionAnalysisSource}</small>`;
 }
 
 function renderAnalyticsMoves() {
@@ -888,7 +924,9 @@ function requestAnalyticsPositionAnalysis() {
   send({ type: "analyze-sequence", moves, context: "analytics" });
 }
 
-function renderImportedAnalysis(review) {
+function renderImportedAnalysis(review, requestedMoves = "") {
+  const currentMoves = analyticsHistory.map((move) => move.move).join(" ");
+  if (requestedMoves && requestedMoves !== currentMoves) return;
   if (!review || review.error) {
     analyticsSummaryEl.textContent = "Could not analyze.";
     analyticsReportEl.className = "report empty";
@@ -905,7 +943,7 @@ function renderImportedAnalysis(review) {
     const item = document.createElement("button");
     item.type = "button";
     item.className = "report-item";
-    item.innerHTML = `<span>${row.turn}. ${colorName(row.color)} ${row.move}<br><small>Best: ${row.bestMove} | loss ${Number(row.loss).toFixed(1)}</small></span><span class="tag ${row.label}">${row.label}</span>`;
+    item.innerHTML = `<span>${row.turn}. ${colorName(row.color)} played ${row.move}<br><small>Best before move: ${row.bestMove} | loss ${Number(row.loss).toFixed(1)}</small></span><span class="tag ${row.label}">${row.label}</span>`;
     item.addEventListener("click", () => showAnalyticsReviewPosition(row));
     analyticsReportEl.appendChild(item);
   });

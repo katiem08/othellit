@@ -1225,6 +1225,47 @@ button.game-row {
   font-weight: 850;
 }
 
+.current-best {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 6px;
+  background: #171512;
+  box-shadow: inset 0 0 0 1px rgba(240, 198, 78, 0.18);
+  color: var(--text);
+}
+
+.current-best.empty {
+  color: var(--muted);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.current-best strong {
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.current-best div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.current-best small,
+.current-best span {
+  color: var(--muted);
+}
+
+.best-chip {
+  width: fit-content;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(240, 198, 78, 0.14);
+  color: var(--gold) !important;
+  font-size: 12px;
+  font-weight: 900;
+}
+
 .tag {
   padding: 3px 8px;
   border-radius: 999px;
