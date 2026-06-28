@@ -1,6 +1,6 @@
 const BLACK = 1;
 const WHITE = -1;
-const EXPECTED_SERVER_VERSION = 9;
+const EXPECTED_SERVER_VERSION = 10;
 let socket;
 let myId = "";
 let myColor = 0;
@@ -13,6 +13,10 @@ let resignTimeout = null;
 let currentRoom = null;
 let latestAnalysis = [];
 let latestAnalysisSource = "local";
+let positionAnalysis = [];
+let positionAnalysisSource = "local";
+let analyticsPositionAnalysis = [];
+let analyticsPositionAnalysisSource = "local";
 let lobbyOnlinePlayers = [];
 let boardView = { mode: "live", ply: null, bestIndex: null, playedIndex: null };
 let lastRoomHistoryLength = 0;
@@ -23,6 +27,7 @@ let analyticsBoardState = [];
 let analyticsTurn = BLACK;
 let analyticsHistory = [];
 let analyticsTimer = null;
+let analyticsPlayedIndex = null;
 let selectedGamePerson = { type: "me", name: null };
 let gamePanelNotice = "";
 const recordedRooms = new Set(JSON.parse(localStorage.getItem("othellitRecordedRooms") || "[]"));
@@ -174,10 +179,19 @@ function connect() {
       requestAnalysis();
     }
     if (data.type === "analysis") {
-      latestAnalysis = data.moves;
-      latestAnalysisSource = data.source || "local";
+      if (data.context === boardAnalysisContext()) {
+        positionAnalysis = data.moves;
+        positionAnalysisSource = data.source || "local";
+      } else if (data.context === "analytics") {
+        analyticsPositionAnalysis = data.moves;
+        analyticsPositionAnalysisSource = data.source || "local";
+      } else if (!data.context) {
+        latestAnalysis = data.moves;
+        latestAnalysisSource = data.source || "local";
+      }
       renderAnalysis();
       renderBoard();
+      renderAnalyticsBoard();
     }
     if (data.type === "import-analysis") renderImportedAnalysis(data.review);
     if (data.type === "lobby") renderLobby(data);
@@ -478,8 +492,9 @@ function renderBoard() {
   const legal = currentRoom && liveView ? (currentRoom.turn === BLACK ? currentRoom.legal.black : currentRoom.legal.white) : [];
   const canMove = currentRoom?.status === "playing" && myColor === currentRoom.turn && liveView;
   const showEngineHints = currentRoom?.mode === "computer" || currentRoom?.status === "complete";
-  const best = liveView ? latestAnalysis[0]?.index : boardView.bestIndex;
-  const good = liveView ? latestAnalysis[1]?.index : null;
+  const replayAnalysis = boardView.mode === "after" ? positionAnalysis : [];
+  const best = liveView ? latestAnalysis[0]?.index : boardView.mode === "review" ? boardView.bestIndex : replayAnalysis[0]?.index;
+  const good = liveView ? latestAnalysis[1]?.index : replayAnalysis[1]?.index;
   const liveLastIndex = liveView ? currentRoom?.history?.at(-1)?.index : null;
   const showBestHighlight = boardView.mode === "review" || (analysisToggleEl.checked && showEngineHints);
   const flipIndexes = liveView ? animatedFlipIndexes : new Set();
@@ -573,9 +588,11 @@ function renderHistory() {
 
 function showBoardAfterMove(ply) {
   boardView = { mode: "after", ply, bestIndex: null, playedIndex: null };
+  positionAnalysis = [];
   renderBoard();
   renderHistory();
   renderBoardViewStatus();
+  requestAnalysis();
 }
 
 function showReviewPosition(row) {
@@ -603,9 +620,19 @@ function renderBoardViewStatus(reviewRow = null) {
 
 function showLiveBoard() {
   boardView = { mode: "live", ply: null, bestIndex: null, playedIndex: null };
+  positionAnalysis = [];
   renderBoard();
   renderHistory();
   renderRoom();
+}
+
+function boardAnalysisContext() {
+  if (!currentRoom || boardView.mode !== "after") return "";
+  return `board-after-${Math.max(0, Math.min(boardView.ply || 0, currentRoom.history?.length || 0))}`;
+}
+
+function movesThroughPly(ply) {
+  return (currentRoom?.history || []).slice(0, ply).map((move) => move.move).join(" ");
 }
 
 function renderAnalysis() {
@@ -619,14 +646,16 @@ function renderAnalysis() {
     analysisEl.textContent = "Best-move hints are only shown in computer games.";
     return;
   }
-  if (!latestAnalysis.length) {
+  const viewedAnalysis = boardView.mode === "after" ? positionAnalysis : latestAnalysis;
+  const viewedSource = boardView.mode === "after" ? positionAnalysisSource : latestAnalysisSource;
+  if (!viewedAnalysis.length) {
     analysisEl.className = "analysis empty";
-    analysisEl.textContent = "No legal moves in this position.";
+    analysisEl.textContent = boardView.mode === "after" ? "Analyzing this past position..." : "No legal moves in this position.";
     return;
   }
   analysisEl.className = "analysis";
-  analysisEl.innerHTML = `<div class="engine-source">Using ${latestAnalysisSource}</div>`;
-  latestAnalysis.slice(0, 5).forEach((move, i) => {
+  analysisEl.innerHTML = `<div class="engine-source">Using ${viewedSource}${boardView.mode === "after" ? " for shown board" : ""}</div>`;
+  viewedAnalysis.slice(0, 5).forEach((move, i) => {
     const item = document.createElement("div");
     item.className = "analysis-item";
     const score = Number(move.score).toFixed(2);
@@ -676,6 +705,8 @@ function resetAnalytics() {
   analyticsBoardState = initialClientBoard();
   analyticsTurn = BLACK;
   analyticsHistory = [];
+  analyticsPositionAnalysis = [];
+  analyticsPlayedIndex = null;
   analyticsMoveTextEl.value = "";
   analyticsSummaryEl.textContent = "Add moves to begin.";
   analyticsReportEl.className = "report empty";
@@ -727,7 +758,9 @@ function clientLegalMoves(board, color) {
 
 function applyAnalyticsMove(index) {
   if (!commitAnalyticsMove(index)) return;
+  analyticsPlayedIndex = null;
   renderAnalyticsBoard();
+  requestAnalyticsPositionAnalysis();
   queueImportedAnalysis();
 }
 
@@ -773,8 +806,16 @@ function renderAnalyticsBoard() {
     legal = clientLegalMoves(analyticsBoardState, analyticsTurn);
   }
   analyticsStatusEl.textContent = legal.length ? `${passText}${colorName(analyticsTurn)} to move` : `Game over ${counts.black}-${counts.white}`;
+  const analyticsBest = analyticsPositionAnalysis[0]?.index;
+  const analyticsGood = analyticsPositionAnalysis[1]?.index;
+  if (legal.length && analyticsBest !== undefined) {
+    analyticsStatusEl.textContent += ` · best ${squareName(analyticsBest)} (${analyticsPositionAnalysisSource})`;
+  }
   analyticsBoardState.forEach((piece, index) => {
     const cell = cellEl(index, piece);
+    if (index === analyticsPlayedIndex) cell.classList.add("played-review");
+    if (index === analyticsBest) cell.classList.add("best");
+    if (index === analyticsGood) cell.classList.add("good");
     if (legal.includes(index)) {
       cell.classList.add("legal", "playable");
       cell.addEventListener("click", () => applyAnalyticsMove(index));
@@ -815,6 +856,7 @@ function loadMovesIntoAnalytics(moves, options = {}) {
   moves.forEach((move) => commitAnalyticsMove(moveIndexClient(move), { sound: false }));
   analyticsMoveTextEl.value = analyticsHistory.map((move) => move.move).join(" ");
   renderAnalyticsBoard();
+  requestAnalyticsPositionAnalysis();
   requestImportedAnalysis();
 }
 
@@ -841,6 +883,11 @@ function requestImportedAnalysis() {
   });
 }
 
+function requestAnalyticsPositionAnalysis() {
+  const moves = analyticsHistory.map((move) => move.move).join(" ");
+  send({ type: "analyze-sequence", moves, context: "analytics" });
+}
+
 function renderImportedAnalysis(review) {
   if (!review || review.error) {
     analyticsSummaryEl.textContent = "Could not analyze.";
@@ -855,11 +902,26 @@ function renderImportedAnalysis(review) {
   analyticsReportEl.className = "report";
   analyticsReportEl.innerHTML = `<div class="engine-source">Review source: ${review.source}</div>`;
   rows.forEach((row) => {
-    const item = document.createElement("div");
+    const item = document.createElement("button");
+    item.type = "button";
     item.className = "report-item";
     item.innerHTML = `<span>${row.turn}. ${colorName(row.color)} ${row.move}<br><small>Best: ${row.bestMove} | loss ${Number(row.loss).toFixed(1)}</small></span><span class="tag ${row.label}">${row.label}</span>`;
+    item.addEventListener("click", () => showAnalyticsReviewPosition(row));
     analyticsReportEl.appendChild(item);
   });
+}
+
+function showAnalyticsReviewPosition(row) {
+  const moves = analyticsMoveTextEl.value.toLowerCase().match(/[a-h][1-8]/g) || analyticsHistory.map((move) => move.move);
+  const priorMoves = moves.slice(0, Math.max(0, row.turn - 1));
+  resetAnalytics();
+  priorMoves.forEach((move) => commitAnalyticsMove(moveIndexClient(move), { sound: false }));
+  analyticsMoveTextEl.value = moves.join(" ");
+  analyticsPlayedIndex = moveIndexClient(row.move);
+  analyticsPositionAnalysis = [{ index: moveIndexClient(row.bestMove), move: row.bestMove, score: row.score ?? 0 }];
+  analyticsPositionAnalysisSource = row.source || "review";
+  analyticsSummaryEl.textContent = `Move ${row.turn}: played ${row.move}, best ${row.bestMove}`;
+  renderAnalyticsBoard();
 }
 
 function renderLobby(data) {
@@ -1228,6 +1290,10 @@ function openSavedGameReview(game) {
 }
 
 function requestAnalysis() {
+  if (currentRoom && boardView.mode === "after") {
+    send({ type: "analyze-sequence", moves: movesThroughPly(boardView.ply || 0), context: boardAnalysisContext() });
+    return;
+  }
   if (analysisToggleEl.checked && currentRoom?.status !== "complete" && currentRoom?.mode === "computer") send({ type: "analyze" });
 }
 
