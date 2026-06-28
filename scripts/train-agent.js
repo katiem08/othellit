@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 
+const path = require("path");
+const { spawn } = require("child_process");
+
 const EMPTY = 0;
 const BLACK = 1;
 const WHITE = -1;
@@ -31,6 +34,9 @@ function arg(name, fallback) {
 
 const gamesPerMatchup = Math.max(1, Number(arg("games", "8")));
 const teacherDepth = Math.max(1, Number(arg("teacher-depth", "5")));
+const teacherKind = String(arg("teacher", "local")).toLowerCase();
+const egaroucidLevel = Math.max(0, Number(arg("egaroucid-level", "15")));
+const egaroucidPath = arg("egaroucid-path", path.join(__dirname, "..", "vendor", "egaroucid", "Egaroucid_for_Console.out"));
 const levels = String(arg("levels", Object.keys(LEVELS).join(",")))
   .split(",")
   .map((level) => level.trim())
@@ -51,6 +57,13 @@ function other(color) {
 
 function moveName(index) {
   return `${"abcdefgh"[index % 8]}${Math.floor(index / 8) + 1}`;
+}
+
+function moveIndex(move) {
+  const col = "abcdefgh".indexOf(String(move || "")[0]);
+  const row = Number(String(move || "")[1]) - 1;
+  if (col < 0 || row < 0 || row > 7) return -1;
+  return row * 8 + col;
 }
 
 function countPieces(board) {
@@ -177,9 +190,116 @@ function chooseLevelMove(board, color, levelName) {
   return pickMove(analyzeMoves(board, color, depth), config);
 }
 
-function playGame(levelName, levelColor) {
+class LocalTeacher {
+  constructor(depth) {
+    this.depth = depth;
+    this.name = `local depth ${depth}`;
+  }
+
+  async start() {}
+
+  async stop() {}
+
+  async rank(board, color) {
+    return analyzeMoves(board, color, this.depth);
+  }
+}
+
+class EgaroucidTeacher {
+  constructor(executable, level) {
+    this.executable = executable;
+    this.level = level;
+    this.name = `Egaroucid level ${level}`;
+    this.process = null;
+    this.buffer = "";
+    this.waiter = null;
+  }
+
+  async start() {
+    this.process = spawn(this.executable, ["-q", "-noboard", "-l", String(this.level), "-t", "1"], {
+      cwd: path.dirname(this.executable),
+      stdio: ["pipe", "pipe", "pipe"]
+    });
+    this.process.stdout.on("data", (chunk) => this.onData(chunk));
+    this.process.stderr.on("data", (chunk) => this.onData(chunk));
+    await this.waitForPrompt();
+  }
+
+  async stop() {
+    if (!this.process) return;
+    this.process.stdin.write("quit\n");
+    this.process.kill();
+    this.process = null;
+  }
+
+  onData(chunk) {
+    this.buffer += chunk.toString("utf8");
+    if (this.waiter && this.buffer.endsWith("> ")) {
+      const waiter = this.waiter;
+      this.waiter = null;
+      waiter.resolve(this.buffer);
+    }
+  }
+
+  waitForPrompt() {
+    if (this.buffer.endsWith("> ")) return Promise.resolve(this.buffer);
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.waiter = null;
+        reject(new Error("Egaroucid did not answer in time"));
+      }, 20000);
+      this.waiter = {
+        resolve: (text) => {
+          clearTimeout(timer);
+          resolve(text);
+        }
+      };
+    });
+  }
+
+  async command(text) {
+    this.buffer = "";
+    this.process.stdin.write(`${text}\n`);
+    return this.waitForPrompt();
+  }
+
+  async rank(_board, _color, history) {
+    const sequence = history.map((move) => moveName(move.index)).join("");
+    await this.command("init");
+    if (sequence) await this.command(`play ${sequence}`);
+    const output = await this.command("hint 32");
+    return this.parseHint(output);
+  }
+
+  parseHint(output) {
+    return output
+      .split("\n")
+      .map((line) => line.split("|").map((part) => part.trim()))
+      .filter((parts) => parts.length >= 5 && /^[a-h][1-8]$/i.test(parts[3]))
+      .map((parts) => ({
+        index: moveIndex(parts[3].toLowerCase()),
+        move: parts[3].toLowerCase(),
+        score: Number(parts[4].replace("+", "")),
+        source: "Egaroucid"
+      }))
+      .filter((move) => move.index >= 0 && Number.isFinite(move.score))
+      .sort((a, b) => b.score - a.score);
+  }
+}
+
+async function createTeacher() {
+  if (teacherKind === "egaroucid") {
+    const teacher = new EgaroucidTeacher(egaroucidPath, egaroucidLevel);
+    await teacher.start();
+    return teacher;
+  }
+  return new LocalTeacher(teacherDepth);
+}
+
+async function playGame(levelName, levelColor, teacher) {
   let board = initialBoard();
   let turn = BLACK;
+  const history = [];
   const stats = {
     gameMoves: 0,
     agreements: 0,
@@ -198,23 +318,24 @@ function playGame(levelName, levelColor) {
       continue;
     }
 
-    const teacherRanked = analyzeMoves(board, turn, teacherDepth);
-    const teacher = teacherRanked[0] || null;
-    const picked = turn === levelColor ? chooseLevelMove(board, turn, levelName) : teacher;
+    const teacherRanked = await teacher.rank(board, turn, history);
+    const teacherMove = teacherRanked[0] || null;
+    const picked = turn === levelColor ? chooseLevelMove(board, turn, levelName) : teacherMove;
     if (!picked) break;
 
-    if (turn === levelColor && teacher) {
+    if (turn === levelColor && teacherMove) {
       const teacherViewOfPicked = teacherRanked.find((move) => move.index === picked.index);
-      const loss = Math.max(0, teacher.score - (teacherViewOfPicked?.score ?? teacher.score));
+      const loss = Math.max(0, teacherMove.score - (teacherViewOfPicked?.score ?? teacherMove.score));
       stats.checks += 1;
       stats.totalLoss += loss;
-      if (teacher.index === picked.index) stats.agreements += 1;
+      if (teacherMove.index === picked.index) stats.agreements += 1;
       if (loss > stats.worstLoss) {
         stats.worstLoss = loss;
-        stats.worstMove = `${moveName(picked.index)} instead of ${moveName(teacher.index)}`;
+        stats.worstMove = `${moveName(picked.index)} instead of ${moveName(teacherMove.index)}`;
       }
     }
 
+    history.push({ color: turn, index: picked.index });
     board = applyMove(board, turn, picked.index);
     turn = other(turn);
     stats.gameMoves += 1;
@@ -256,20 +377,26 @@ function addGame(summary, game) {
   }
 }
 
-function run() {
+async function run() {
+  const teacher = await createTeacher();
   console.log(`Othellit training agent`);
-  console.log(`Teacher depth: ${teacherDepth}`);
+  console.log(`Teacher: ${teacher.name}`);
   console.log(`Games per level: ${gamesPerMatchup * 2}`);
   console.log("");
 
-  const summaries = levels.map((level) => {
+  const summaries = [];
+  try {
+    for (const level of levels) {
     const summary = blankSummary(level);
     for (let i = 0; i < gamesPerMatchup; i += 1) {
-      addGame(summary, playGame(level, BLACK));
-      addGame(summary, playGame(level, WHITE));
+        addGame(summary, await playGame(level, BLACK, teacher));
+        addGame(summary, await playGame(level, WHITE, teacher));
     }
-    return summary;
-  });
+      summaries.push(summary);
+    }
+  } finally {
+    await teacher.stop();
+  }
 
   for (const summary of summaries) {
     const agreement = summary.totalChecks
@@ -289,4 +416,7 @@ function run() {
   console.log("Use this to spot whether levels are too similar, too slow, or missing obvious teacher moves.");
 }
 
-run();
+run().catch((error) => {
+  console.error(error.message);
+  process.exit(1);
+});
